@@ -1,0 +1,10 @@
+# Exclude Python virtual environment
+gait_env/
+__pycache__/
+*.pyc
+
+# Exclude massive datasets and packed bin sets
+*CASIA*/
+*.npy
+*.png
+*.pth
