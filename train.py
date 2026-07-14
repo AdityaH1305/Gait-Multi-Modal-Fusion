@@ -80,7 +80,7 @@ def train_model() -> None:
 
     # ── 4. MODEL, LOSS, OPTIMIZER, SCHEDULER ───────────────────────────
     model = GlobalLocalFusedNetwork(num_classes=NUM_CLASSES).to(device)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.TripletMarginLoss(margin=0.2, p=2)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     # ┌──────────────────────────────────────────────────────────────────┐
