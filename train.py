@@ -154,7 +154,7 @@ def train_model() -> None:
     ACCUM_STEPS = 2              # effective batch = 16 × 2 = 32
 
     LEARNING_RATE = 1e-3
-    EPOCHS = 1
+    EPOCHS = 150
     NUM_CLASSES = 74
     EMBED_DIM = 256
 
