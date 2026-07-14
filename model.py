@@ -218,7 +218,7 @@ class GlobalLocalFusedNetwork(nn.Module):
 
         flat_dim = self._FEAT_CHANNELS * self._FEAT_HEIGHT * self._FEAT_WIDTH
         # ── FIX: Dropout before FC prevents overfitting on 74 classes ──
-        self.dropout = nn.Dropout(p=0.3)
+        self.dropout = nn.Dropout(p=0.15)
         self.fc = nn.Linear(flat_dim, num_classes)
 
     def forward(
