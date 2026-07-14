@@ -15,11 +15,10 @@ the cosine similarity of their feature embeddings and report Rank-1 accuracy
 correct subject identity.
 
 Embedding extraction:
-    The feature vector is extracted from the **fused representation before the
-    final classification head**.  Specifically, we capture the flattened output
-    of the attention-fusion module (128 × 16 × 16 = 32,768-D), then
-    L2-normalise it for cosine distance matching.  The linear classifier is
-    irrelevant for open-set retrieval.
+    The feature vector is extracted from the model's **trained embedding head**.
+    The split-head architecture projects the fused features into a compact
+    256-D space with L2 normalisation.  We call model.forward() and discard
+    the logits, keeping only the embeddings for cosine distance matching.
 
 Hardware constraints (Windows + RTX 4050 / 6 GB VRAM):
     - num_workers=0 on all DataLoaders (Windows process-spawning bottleneck).
@@ -298,20 +297,16 @@ def extract_embeddings(
             torch.from_numpy(gei_batch).float().unsqueeze(1) / PIXEL_MAX
         ).to(device)                                                   # (B, 1, 64, 64)
 
-        # ── Forward pass: branches → fusion (skip classifier head) ──
-        feat_a = model.branch_a(frames_t)                              # (B, 128, 16, 16)
-        feat_b = model.branch_b(gei_t)                                 # (B, 128, 16, 16)
-        fused = model.fusion(feat_a, feat_b)                           # (B, 128, 16, 16)
-
-        # Flatten and L2-normalise for cosine similarity
-        embeddings = fused.view(B, -1)                                 # (B, 32768)
-        embeddings = F.normalize(embeddings, p=2, dim=1)
+        # ── Forward pass: full model returns (logits, embeddings) ──
+        # Embeddings are already L2-normalised 256-D vectors from the
+        # trained projection head — no manual normalisation needed.
+        logits, embeddings = model(frames_t, gei_t)                    # (B, 256)
 
         # ── Move result to CPU immediately to free VRAM ──
         all_embeddings.append(embeddings.cpu().numpy())
 
         # Explicitly free GPU tensors
-        del frames_t, gei_t, feat_a, feat_b, fused, embeddings
+        del frames_t, gei_t, logits, embeddings
         if device.type == "cuda":
             torch.cuda.empty_cache()
 
@@ -508,7 +503,7 @@ def main() -> None:
     model.eval()
 
     total_params = sum(p.numel() for p in model.parameters())
-    embed_dim = model._FEAT_CHANNELS * model._FEAT_HEIGHT * model._FEAT_WIDTH
+    embed_dim = model.embed_dim
     print(f"  Model loaded: {total_params:,} parameters")
     print(f"  Embedding dimension: {embed_dim:,}")
     print(f"  Mode: eval (dropout OFF, batchnorm frozen)")

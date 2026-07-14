@@ -14,17 +14,23 @@ Performance architecture:
     - During training, 30 frames are randomly sampled per sequence
       (standard GaitSet practice), providing fixed tensor shapes and
       implicit data augmentation.
+
+Metric learning support:
+    - **PKBatchSampler**: Identity-aware batch sampler that yields batches
+      of P identities × K sequences, guaranteeing valid anchor/positive
+      pairs for online triplet mining in every batch.
 """
 
 import glob
 import os
 import random
+from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm import tqdm
 
 
@@ -286,6 +292,117 @@ def gait_collate_fn(
 
 
 # ---------------------------------------------------------------------------
+# PK Batch Sampler for Metric Learning
+# ---------------------------------------------------------------------------
+
+
+class PKBatchSampler(Sampler):
+    """Identity-aware batch sampler for metric learning (triplet mining).
+
+    Constructs mini-batches of exactly ``P × K`` samples by selecting
+    ``P`` random identities and ``K`` random sequences per identity.
+    This **guarantees** that every batch contains valid anchor–positive
+    pairs, which is a hard requirement for online triplet mining.
+
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  WHY THIS IS NECESSARY:                                         │
+    │                                                                 │
+    │  With random shuffle (the PyTorch default), a batch of 16 drawn │
+    │  from 74 identities has only ~53% chance of containing even ONE │
+    │  anchor–positive pair.  Triplet mining on such batches produces  │
+    │  zero-gradient steps, wasting compute.                          │
+    │                                                                 │
+    │  PK sampling guarantees K–1 positives per anchor per batch,     │
+    │  giving the miner (K–1) × P × K candidate triplets to select   │
+    │  from — every single gradient step is informative.              │
+    └──────────────────────────────────────────────────────────────────┘
+
+    Args:
+        labels:  The full list of integer identity labels from the dataset
+                 (i.e., ``dataset._labels``).
+        P:       Number of distinct identities per batch.  Default ``4``.
+        K:       Number of sequences sampled per identity.  Default ``4``.
+
+    Yields:
+        A list of ``P × K`` dataset indices forming one mini-batch.
+
+    Note:
+        If an identity has fewer than ``K`` sequences in the dataset,
+        sequences are oversampled **with replacement** to fill the quota.
+        With CASIA-B training split (74 subjects, ~110 sequences each),
+        this almost never triggers.
+    """
+
+    def __init__(
+        self,
+        labels: List[int],
+        P: int = 4,
+        K: int = 4,
+    ) -> None:
+        self.P = P
+        self.K = K
+
+        # ── Group all dataset indices by their identity label ──
+        self.label_to_indices: Dict[int, List[int]] = defaultdict(list)
+        for idx, label in enumerate(labels):
+            self.label_to_indices[label].append(idx)
+
+        self.unique_labels: List[int] = list(self.label_to_indices.keys())
+
+        # ── Validation ──
+        if len(self.unique_labels) < P:
+            raise ValueError(
+                f"PKBatchSampler requires at least P={P} identities, "
+                f"but the dataset only has {len(self.unique_labels)}."
+            )
+
+        # ── Report statistics ──
+        seqs_per_id = [len(v) for v in self.label_to_indices.values()]
+        print(
+            f"[PKBatchSampler] {len(self.unique_labels)} identities | "
+            f"P={P}, K={K} → batch_size={P * K} | "
+            f"Seqs/identity: min={min(seqs_per_id)}, "
+            f"max={max(seqs_per_id)}, "
+            f"mean={np.mean(seqs_per_id):.0f} | "
+            f"Batches/epoch={len(self)}"
+        )
+
+    def __iter__(self):
+        """Yield PK-structured batches for one epoch.
+
+        At the start of each epoch, the identity order is shuffled so
+        different identity combinations appear in different epochs.
+        """
+        # Shuffle identity order for this epoch
+        shuffled_labels = self.unique_labels.copy()
+        random.shuffle(shuffled_labels)
+
+        # Iterate through identities in groups of P
+        num_batches = len(shuffled_labels) // self.P
+        for batch_i in range(num_batches):
+            batch_labels = shuffled_labels[batch_i * self.P : (batch_i + 1) * self.P]
+            batch_indices: List[int] = []
+
+            for label in batch_labels:
+                pool = self.label_to_indices[label]
+
+                if len(pool) >= self.K:
+                    # Enough sequences → sample WITHOUT replacement
+                    chosen = random.sample(pool, self.K)
+                else:
+                    # Rare: fewer than K sequences → oversample
+                    chosen = random.choices(pool, k=self.K)
+
+                batch_indices.extend(chosen)
+
+            yield batch_indices
+
+    def __len__(self) -> int:
+        """Number of PK batches per epoch (drops incomplete final group)."""
+        return len(self.unique_labels) // self.P
+
+
+# ---------------------------------------------------------------------------
 # Quick smoke test
 # ---------------------------------------------------------------------------
 
@@ -293,7 +410,7 @@ if __name__ == "__main__":
     import time
 
     print("=" * 60)
-    print("  Dataset Smoke Test (with .npy cache)")
+    print("  Dataset Smoke Test (with .npy cache + PK Sampler)")
     print("=" * 60)
 
     t0 = time.time()
@@ -304,6 +421,7 @@ if __name__ == "__main__":
     cache_time = time.time() - t0
     print(f"\nCache load time: {cache_time:.1f}s")
 
+    # ── Standard DataLoader (random shuffle) ──
     train_loader = DataLoader(
         train_dataset,
         batch_size=2,
@@ -318,9 +436,39 @@ if __name__ == "__main__":
     t0 = time.time()
     for frames, gei, labels in train_loader:
         batch_ms = (time.time() - t0) * 1000
-        print(f"\nFirst batch:")
+        print(f"\nFirst batch (random shuffle):")
         print(f"  Frames: {frames.shape} (B, N={train_dataset._TRAIN_SET_SIZE}, H, W)")
         print(f"  GEI:    {gei.shape} (B, 1, H, W)")
         print(f"  Labels: {labels}")
         print(f"  Time:   {batch_ms:.1f} ms")
+        break
+
+    # ── PK Sampler DataLoader ──
+    print("\n" + "-" * 60)
+    print("  PK Sampler Test (P=4, K=4)")
+    print("-" * 60)
+
+    pk_sampler = PKBatchSampler(train_dataset._labels, P=4, K=4)
+    pk_loader = DataLoader(
+        train_dataset,
+        batch_sampler=pk_sampler,
+        collate_fn=gait_collate_fn,
+    )
+
+    t0 = time.time()
+    for frames, gei, labels in pk_loader:
+        batch_ms = (time.time() - t0) * 1000
+        unique_ids = labels.unique()
+        print(f"\nFirst PK batch:")
+        print(f"  Frames:     {frames.shape}  (P*K, N, H, W)")
+        print(f"  GEI:        {gei.shape}  (P*K, 1, H, W)")
+        print(f"  Labels:     {labels.tolist()}")
+        print(f"  Unique IDs: {unique_ids.tolist()} ({len(unique_ids)} identities)")
+        print(f"  Time:       {batch_ms:.1f} ms")
+
+        # Verify PK structure: exactly K samples per identity
+        for uid in unique_ids:
+            count = (labels == uid).sum().item()
+            assert count == 4, f"Identity {uid} has {count} samples, expected K=4"
+        print("  [OK] PK structure verified: 4 samples per identity")
         break

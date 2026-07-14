@@ -9,11 +9,20 @@ Architecture overview:
     - **MultimodalFusion**: Learns spatial attention weights to adaptively fuse
       the two branch outputs.
     - **GlobalLocalFusedNetwork**: End-to-end model that wires the branches,
-      fusion module, and a linear classifier together.
+      fusion module, and a **split-head** architecture together.
+
+Split-head design (metric learning support):
+    The fused feature map is projected into a compact 256-D embedding space
+    via a learned linear projection + BatchNorm + L2 normalisation.  A
+    separate classifier head maps embeddings → class logits.
+
+    forward() returns ``(logits, embeddings)`` so the training loop can
+    compute **joint loss**: CrossEntropy on logits + TripletMargin on
+    embeddings simultaneously.
 
 Bug fixes applied:
     - Added BatchNorm2d after every Conv2d for gradient stability (BUG #4).
-    - Added Dropout before the FC head to prevent overfitting on 74 classes.
+    - Added Dropout before the embedding head to prevent overfitting on 74 classes.
 """
 
 import torch
@@ -188,20 +197,44 @@ class MultimodalFusion(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# End-to-end Model
+# End-to-end Model (Split-Head for Joint Loss)
 # ---------------------------------------------------------------------------
 
 class GlobalLocalFusedNetwork(nn.Module):
-    """Complete dual-branch gait recognition network.
+    """Complete dual-branch gait recognition network with split-head output.
 
     Combines :class:`DynamicBranch` (frame-set processing),
     :class:`StaticBranch` (GEI processing), and
     :class:`MultimodalFusion` (attention-weighted fusion), followed by a
-    fully-connected classifier head.
+    **split head**:
+
+        fused_flat (32768-D)
+            │
+            ├──► Dropout(0.15)
+            │
+            ├──► embed_fc (Linear 32768 → 256)
+            │       │
+            │       ├──► embed_bn (BatchNorm1d)
+            │       │
+            │       └──► L2 Normalize  ──────────► **embeddings** (256-D, unit norm)
+            │                                           │
+            │                                           ├──► TripletMarginLoss
+            │                                           │
+            └──────────────────────────────────────► classifier (Linear 256 → C)
+                                                        │
+                                                        └──► **logits** (C-D)
+                                                                │
+                                                                └──► CrossEntropyLoss
+
+    The CE gradient flows *through* the embedding layer, forcing the 256-D
+    space to be simultaneously discriminative (for classification) and
+    metrically structured (for triplet separation).
 
     Args:
         num_classes: Number of identity classes.  Defaults to ``74``
             (subjects 001–074 in the CASIA-B LST training split).
+        embed_dim:   Dimensionality of the metric embedding space.
+            Defaults to ``256`` (standard in GaitSet/GaitPart literature).
     """
 
     # Feature map dimensions after the CNN backbones
@@ -209,42 +242,74 @@ class GlobalLocalFusedNetwork(nn.Module):
     _FEAT_HEIGHT: int = 16
     _FEAT_WIDTH: int = 16
 
-    def __init__(self, num_classes: int = 74) -> None:
+    def __init__(self, num_classes: int = 74, embed_dim: int = 256) -> None:
         super().__init__()
 
+        self.embed_dim = embed_dim
+
+        # ── Dual branches + attention fusion ──
         self.branch_a = DynamicBranch()
         self.branch_b = StaticBranch()
         self.fusion = MultimodalFusion()
 
         flat_dim = self._FEAT_CHANNELS * self._FEAT_HEIGHT * self._FEAT_WIDTH
-        # ── FIX: Dropout before FC prevents overfitting on 74 classes ──
+        # 128 × 16 × 16 = 32,768
+
+        # ── Regularisation ──
         self.dropout = nn.Dropout(p=0.15)
-        self.fc = nn.Linear(flat_dim, num_classes)
+
+        # ── EMBEDDING HEAD ──
+        # Projects the high-dimensional fusion output into a compact metric
+        # space.  BatchNorm stabilises the embedding magnitude during early
+        # training (prevents collapse), and L2 normalisation maps all
+        # embeddings onto the unit hypersphere for cosine-compatible
+        # distance computation.
+        self.embed_fc = nn.Linear(flat_dim, embed_dim)
+        self.embed_bn = nn.BatchNorm1d(embed_dim)
+
+        # ── CLASSIFICATION HEAD ──
+        # Operates on the L2-normalised embeddings.  Because the inputs
+        # are unit-norm, the weight vectors learn angular decision
+        # boundaries (similar to CosFace / ArcFace).
+        self.classifier = nn.Linear(embed_dim, num_classes)
 
     def forward(
         self,
         frames: torch.Tensor,
         gei: torch.Tensor,
-    ) -> torch.Tensor:
-        """Run the full forward pass: branch extraction → fusion → classify.
+    ) -> tuple:
+        """Run the full forward pass: branch extraction → fusion → split head.
 
         Args:
             frames: Silhouette frame set, shape ``(B, N, 64, 64)``.
             gei: Gait Energy Image, shape ``(B, 1, 64, 64)``.
 
         Returns:
-            Class logits of shape ``(B, num_classes)``.
+            A 2-tuple of:
+                - **logits** – Class logits of shape ``(B, num_classes)``.
+                - **embeddings** – L2-normalised embeddings of shape
+                  ``(B, embed_dim)``.
         """
-        feat_a = self.branch_a(frames)
-        feat_b = self.branch_b(gei)
+        # ── Branch feature extraction ──
+        feat_a = self.branch_a(frames)     # (B, 128, 16, 16)
+        feat_b = self.branch_b(gei)        # (B, 128, 16, 16)
 
-        fused_feat = self.fusion(feat_a, feat_b)
+        # ── Attention-weighted fusion ──
+        fused_feat = self.fusion(feat_a, feat_b)  # (B, 128, 16, 16)
 
-        # Flatten spatial dims for the linear head
-        fused_flat = fused_feat.view(fused_feat.size(0), -1)
+        # ── Flatten spatial dims ──
+        fused_flat = fused_feat.view(fused_feat.size(0), -1)  # (B, 32768)
+        fused_flat = self.dropout(fused_flat)
 
-        prediction = self.fc(self.dropout(fused_flat))
-        return prediction
+        # ── Embedding head: project → normalise → unit hypersphere ──
+        embeddings = self.embed_fc(fused_flat)           # (B, 256)
+        embeddings = self.embed_bn(embeddings)           # (B, 256)
+        embeddings = F.normalize(embeddings, p=2, dim=1) # (B, 256), ||e|| = 1
+
+        # ── Classification head: embeddings → logits ──
+        logits = self.classifier(embeddings)             # (B, num_classes)
+
+        return logits, embeddings
 
 
 # ---------------------------------------------------------------------------
@@ -252,19 +317,31 @@ class GlobalLocalFusedNetwork(nn.Module):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Testing Fully Assembled Fused Network...")
+    print("=" * 60)
+    print("  Split-Head Model — Smoke Test")
+    print("=" * 60)
 
-    model = GlobalLocalFusedNetwork(num_classes=74)
+    model = GlobalLocalFusedNetwork(num_classes=74, embed_dim=256)
 
     # Simulate DataLoader outputs
     dummy_frames = torch.randn(2, 45, 64, 64)  # 45 silhouette frames, batch=2
     dummy_gei = torch.randn(2, 1, 64, 64)      # 1 GEI image per sample
 
-    final_prediction = model(dummy_frames, dummy_gei)
-    print(f"Final Prediction Shape: {final_prediction.shape}")
+    logits, embeddings = model(dummy_frames, dummy_gei)
+
+    print(f"Logits shape:     {logits.shape}")       # (2, 74)
+    print(f"Embeddings shape: {embeddings.shape}")   # (2, 256)
+
+    # Verify L2 normalisation
+    norms = torch.norm(embeddings, p=2, dim=1)
+    print(f"Embedding norms:  {norms.tolist()}")     # Should be [1.0, 1.0]
+    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-5), \
+        "Embeddings are not unit-normalised!"
+    print("[OK] Embeddings are unit-normalised (L2 norm = 1.0)")
 
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters:     {total_params:,}")
+    print(f"\nTotal parameters:     {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
+    print(f"Embedding dimension:  {model.embed_dim}")
