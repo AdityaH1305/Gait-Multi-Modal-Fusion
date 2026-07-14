@@ -159,8 +159,8 @@ def train_model() -> None:
     EMBED_DIM = 256
 
     # Joint loss weights
-    TRIPLET_MARGIN = 0.5         # margin for TripletMarginLoss
-    LAMBDA_TRIPLET = 2.0         # weight of triplet loss relative to CE
+    TRIPLET_MARGIN = 0.3         # margin for TripletMarginLoss
+    LAMBDA_TRIPLET = 1.0         # weight of triplet loss relative to CE
 
     print(f"\nHyperparameters:")
     print(f"  PK Sampling:       P={P}, K={K} → micro-batch={MICRO_BATCH}")
