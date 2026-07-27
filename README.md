@@ -49,13 +49,12 @@ The complete pipeline covers:
 The proposed framework extends the original **GaitSet** architecture by integrating **Multimodal Feature Fusion** using **Silhouette Images** and **Gait Energy Images (GEI)**. A Channel Attention mechanism is employed to adaptively weight complementary features before generating the final gait embedding for identification and verification.
 
 <p align="center">
-  <img src="docs/architecture.png" width="950"/>
+  <img src="docs/architecture.png" width="450">
 </p>
 
 <p align="center">
-<b>Figure 1.</b> Complete architecture of the proposed Modified GaitSet-based Multimodal Gait Recognition Framework.
+<b>Figure 1.</b> Overall pipeline of the proposed Modified GaitSet-based Multimodal Gait Recognition Framework.
 </p>
-
 
 ---
 
