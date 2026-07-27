@@ -319,3 +319,17 @@ Several directions can be explored to further improve the robustness and applica
 - Optimise the model for real-time deployment on edge devices through model compression and inference acceleration techniques.
 
 ---
+
+# 🙏 Acknowledgements
+
+The development of this project was made possible through the contributions of the research community and the availability of open datasets and software frameworks. The author would like to acknowledge the following resources:
+
+- **CASIA-B Gait Dataset** for providing one of the most widely used benchmark datasets for gait recognition research.
+
+- **[GaitSet: Cross-View Gait Recognition Through Utilizing Gait As a Deep Set](https://ieeexplore.ieee.org/document/9351667)** for introducing the set-based gait representation framework that forms the foundation of this implementation.
+
+- **[Research on Gait Recognition Based on GaitSet and Multimodal Fusion](https://ieeexplore.ieee.org/document/10852208)** for inspiring the multimodal attention-based feature fusion strategy implemented in this project.
+
+- **PyTorch** and the open-source deep learning community for providing the deep learning framework used throughout model development, training, and evaluation.
+
+The author also expresses sincere gratitude to the faculty members and mentors whose guidance and support contributed to the successful completion of this academic project.
