@@ -257,7 +257,7 @@ Although the framework is primarily optimized for **Rank-1 identification**, the
 To better understand the learning behaviour of the proposed multimodal framework, attention maps were extracted at different stages of training. These visualizations illustrate how the Channel Attention mechanism progressively learns to emphasize the most discriminative gait features while suppressing less informative regions.
 
 <p align="center">
-  <img src="docs/attention_maps.png" width="650">
+  <img src="docs/attention_maps.png" width="600">
 </p>
 
 <p align="center">
