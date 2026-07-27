@@ -301,3 +301,21 @@ While the proposed multimodal gait recognition framework demonstrates promising 
   The current implementation assumes relatively controlled capture conditions. Performance under challenging environments, such as poor illumination, occlusions, crowded scenes, or uneven terrain, has not been investigated.
 
 ---
+
+# 🔮 Future Work
+
+Several directions can be explored to further improve the robustness and applicability of the proposed gait recognition framework.
+
+- Develop clothing-invariant feature extraction methods to improve recognition under significant appearance variations.
+
+- Incorporate skeleton-based or pose-guided representations alongside silhouette and GEI features to capture complementary motion information.
+
+- Investigate advanced attention mechanisms and transformer-based architectures for enhanced multimodal feature fusion.
+
+- Evaluate the framework on additional gait recognition datasets to assess cross-dataset generalisation and robustness.
+
+- Extend the framework to real-world surveillance environments with varying illumination, background clutter, and occlusions.
+
+- Optimise the model for real-time deployment on edge devices through model compression and inference acceleration techniques.
+
+---
