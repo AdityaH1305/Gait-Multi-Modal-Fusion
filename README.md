@@ -278,3 +278,26 @@ The attention maps reveal the gradual refinement of the model's feature selectio
 
 Overall, the progression of these attention maps illustrates how the Channel Attention mechanism evolves from broad feature exploration to targeted feature refinement, enabling the model to learn more discriminative gait representations.
 ---
+
+
+# ⚠️ Limitations
+
+While the proposed multimodal gait recognition framework demonstrates promising performance on the CASIA-B dataset, several limitations remain that provide opportunities for future research.
+
+- **Reduced Performance Under Heavy Clothing**
+
+  Recognition accuracy decreases significantly when subjects wear long coats or loose clothing (CL scenario). Such appearance variations alter the body silhouette and partially obscure gait-related features, making discrimination more challenging.
+
+- **Dependence on Silhouette Quality**
+
+  The framework relies on accurate silhouette extraction during preprocessing. Background noise, segmentation errors, or incomplete silhouettes can negatively impact the quality of the extracted gait representations.
+
+- **Dataset-Specific Evaluation**
+
+  The model has been evaluated exclusively on the CASIA-B benchmark dataset. Although CASIA-B provides diverse viewpoints and walking conditions, additional evaluation on other public datasets would provide a broader assessment of generalisation capability.
+
+- **Limited Environmental Variations**
+
+  The current implementation assumes relatively controlled capture conditions. Performance under challenging environments, such as poor illumination, occlusions, crowded scenes, or uneven terrain, has not been investigated.
+
+---
