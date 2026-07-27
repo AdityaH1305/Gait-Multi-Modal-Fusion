@@ -251,5 +251,30 @@ The Receiver Operating Characteristic (ROC) curve summarizes the trade-off betwe
 
 Although the framework is primarily optimized for **Rank-1 identification**, these verification metrics provide additional insight into the discriminative quality of the learned gait embeddings and demonstrate the model's capability for biometric verification tasks.
 
----
+
+## 🎯 Attention Visualization
+
+To better understand the learning behaviour of the proposed multimodal framework, attention maps were extracted at different stages of training. These visualizations illustrate how the Channel Attention mechanism progressively learns to emphasize the most discriminative gait features while suppressing less informative regions.
+
+<p align="center">
+  <img src="docs/attention_maps.png" width="900">
+</p>
+
+<p align="center">
+<b>Figure 5.</b> Evolution of the attention mechanism over training epochs (10, 50, 100, and 150). Warmer colours indicate higher feature importance, while cooler colours represent lower attention.
+</p>
+
+### Attention Analysis
+
+The attention maps reveal the gradual refinement of the model's feature selection throughout training.
+
+- **Epoch 10:** The attention distribution is relatively scattered, indicating that the model is still learning to identify meaningful gait patterns.
+
+- **Epoch 50:** More structured attention begins to emerge as the network starts emphasizing important body regions associated with gait motion.
+
+- **Epoch 100:** The attention mechanism becomes increasingly focused, assigning greater importance to discriminative spatial features while suppressing background information.
+
+- **Epoch 150:** The learned attention stabilizes into a consistent and well-localized pattern, demonstrating successful convergence of the multimodal feature fusion process.
+
+Overall, the progression of these attention maps illustrates how the Channel Attention mechanism evolves from broad feature exploration to targeted feature refinement, enabling the model to learn more discriminative gait representations.
 ---
