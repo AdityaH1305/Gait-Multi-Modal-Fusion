@@ -195,3 +195,126 @@ Processed_CASIAB/
 ```
 
 These files are then used by the training and evaluation scripts.
+
+---
+
+# 🚀 Usage
+
+The complete workflow for training and evaluating the proposed multimodal gait recognition framework is outlined below.
+
+---
+
+## Step 1 — Preprocess the Dataset
+
+Extract silhouettes, perform spatial normalization, and generate Gait Energy Images (GEIs).
+
+```bash
+python preprocess.py
+```
+
+---
+
+## Step 2 — Package the Dataset
+
+Convert the processed dataset into NumPy arrays for efficient loading during training.
+
+```bash
+python pack_npy.py
+```
+
+---
+
+## Step 3 — Train the Model
+
+Train the modified GaitSet model with multimodal feature fusion.
+
+```bash
+python train.py
+```
+
+During training, the framework:
+
+- Extracts silhouette features using the spatial branch
+- Extracts GEI features using the temporal branch
+- Applies Channel Attention for multimodal feature fusion
+- Learns discriminative gait embeddings using Batch-All Triplet Loss
+- Saves the best-performing model checkpoints
+
+---
+
+## Step 4 — Evaluate the Model
+
+Evaluate the trained model on the test dataset.
+
+```bash
+python eval.py
+```
+
+The evaluation reports:
+
+- Rank-1 Recognition Accuracy
+- Cross-view recognition performance
+- NM (Normal Walking) accuracy
+- BG (Walking with Bag) accuracy
+- CL (Walking with Coat) accuracy
+
+---
+
+## Step 5 — Compute Biometric Metrics
+
+Generate verification metrics for the trained model.
+
+```bash
+python compute_biometrics.py
+```
+
+This script computes:
+
+- Receiver Operating Characteristic (ROC) Curve
+- Area Under the Curve (AUC)
+- Equal Error Rate (EER)
+- Optimal Decision Threshold
+
+---
+
+## Typical Workflow
+
+The complete execution pipeline is shown below.
+
+```text
+Download CASIA-B
+        │
+        ▼
+Preprocess Dataset
+(preprocess.py)
+        │
+        ▼
+Package Dataset
+(pack_npy.py)
+        │
+        ▼
+Train Model
+(train.py)
+        │
+        ▼
+Evaluate Model
+(eval.py)
+        │
+        ▼
+Compute ROC & EER
+(compute_biometrics.py)
+```
+
+---
+
+## Output Files
+
+After training and evaluation, the project generates:
+
+- Trained model checkpoints (`.pth`)
+- Training accuracy and loss curves
+- Rank-1 recognition results
+- ROC curve
+- Equal Error Rate (EER)
+- Attention map visualizations
+- Evaluation logs
