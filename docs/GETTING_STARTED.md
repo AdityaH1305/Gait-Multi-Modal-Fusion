@@ -71,4 +71,47 @@ Confirm that Python and PyTorch are installed correctly.
 ```bash
 python --version
 python -c "import torch; print(torch.__version__)"
+
 ```
+
+---
+
+# 💻 System Requirements
+
+The project was developed and tested using the following software and hardware configuration.
+
+## Software Requirements
+
+| Component | Version |
+|-----------|---------|
+| Python | 3.11.15 |
+| PyTorch | 2.7.1 |
+| CUDA Toolkit | 11.8 |
+| TorchVision | Compatible with PyTorch 2.7.1 |
+| NumPy | Latest Stable Version |
+| OpenCV | Latest Stable Version |
+| Pillow | Latest Stable Version |
+| Matplotlib | Latest Stable Version |
+
+---
+
+## Hardware Configuration
+
+| Component | Specification |
+|-----------|---------------|
+| GPU | NVIDIA GeForce RTX 4050 Laptop GPU |
+| GPU Memory | 6 GB VRAM |
+| CUDA Version | 11.8 |
+
+---
+
+## Recommended Environment
+
+For the best compatibility and reproducibility, it is recommended to use:
+
+- Python 3.11
+- CUDA 11.8
+- NVIDIA GPU with CUDA support
+- Windows 10/11 or a recent Linux distribution
+
+Although the project can run on a CPU, GPU acceleration is strongly recommended due to the computational requirements of deep learning model training.
