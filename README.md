@@ -239,7 +239,7 @@ The Receiver Operating Characteristic (ROC) curve summarizes the trade-off betwe
 |:-------|------:|
 | **Area Under the Curve (AUC)** | **0.5876** |
 | **Equal Error Rate (EER)** | **44.94%** |
-| **Optimal Decision Threshold** | **0.0077** |
+| **Optimal Decision Threshold** | **0.0094** |
 
 ### Discussion
 
@@ -247,7 +247,7 @@ The Receiver Operating Characteristic (ROC) curve summarizes the trade-off betwe
 
 - **Equal Error Rate (EER):** The **Equal Error Rate of 44.94%** represents the operating point where the False Acceptance Rate (FAR) equals the False Rejection Rate (FRR). Lower EER values indicate stronger verification performance.
 
-- **Decision Threshold:** The optimal cosine similarity threshold was determined to be **0.0077**, providing the best balance between accepting genuine matches and rejecting impostor matches.
+- **Decision Threshold:** The optimal cosine similarity threshold was determined to be **0.0094**, providing the best balance between accepting genuine matches and rejecting impostor matches.
 
 Although the framework is primarily optimized for **Rank-1 identification**, these verification metrics provide additional insight into the discriminative quality of the learned gait embeddings and demonstrate the model's capability for biometric verification tasks.
 
