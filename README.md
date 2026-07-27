@@ -126,3 +126,96 @@ The proposed framework has been trained and evaluated using the **CASIA-B Gait D
 | Gallery Sequences | NM-01 to NM-04 |
 
 The CASIA-B dataset provides significant viewpoint and appearance variations, making it an ideal benchmark for evaluating cross-view gait recognition algorithms.
+
+---
+
+# 🚀 Getting Started
+
+Ready to reproduce the results or train the model?
+
+The complete setup guide includes:
+
+- ⚙️ Installation
+- 💻 System Requirements
+- 📂 Dataset Preparation
+- 🚀 Training & Evaluation Workflow
+
+➡️ **[Open the Getting Started Guide](docs/GETTING_STARTED.md)**
+
+---
+
+# 📊 Results & Performance
+
+This section presents the performance of the proposed **Modified GaitSet-Based Multimodal Gait Recognition Framework** on the **CASIA-B gait dataset**. The evaluation includes training behaviour, recognition accuracy, verification metrics, and attention visualization, providing a comprehensive assessment of the model's effectiveness.
+
+
+## 🏆 Performance Highlights
+
+The proposed multimodal gait recognition framework was evaluated on the **CASIA-B** benchmark dataset using both **identification** and **verification** metrics. The table below summarizes the overall performance achieved by the model.
+
+| Metric | Result |
+|:--------|:------:|
+| **Overall Rank-1 Recognition Accuracy** | **75.20%** |
+| **Normal Walking (NM)** | **98.00%** |
+| **Walking with Bag (BG)** | **82.24%** |
+| **Walking with Coat (CL)** | **45.36%** |
+| **ROC AUC** | **0.5876** |
+| **Equal Error Rate (EER)** | **44.94%** |
+
+These results demonstrate that the proposed multimodal framework achieves excellent recognition performance under normal walking conditions while maintaining reasonable robustness to appearance variations such as carrying a bag or wearing a coat. The verification metrics further provide insight into the model's ability to distinguish between genuine and impostor gait samples.
+
+
+## 📈 Training Performance
+
+The training process was monitored using three key metrics: **Cross-Entropy Loss**, **Batch-All Triplet Loss**, and **Training Accuracy**. Together, these metrics provide insight into the convergence behaviour of the proposed multimodal gait recognition framework.
+
+<p align="center">
+  <img src="docs/training_curves.png" width="850">
+</p>
+
+<p align="center">
+<b>Figure 2.</b> Training curves showing Cross-Entropy Loss, Batch-All Triplet Loss, and Training Accuracy over 150 epochs.
+</p>
+
+
+### Training Analysis
+
+The model demonstrates stable convergence throughout the training process.
+
+- **Cross-Entropy Loss** decreases steadily, indicating improved classification capability as training progresses.
+- **Batch-All Triplet Loss** reduces significantly, showing that the learned feature embeddings become increasingly discriminative by bringing samples of the same identity closer while separating different identities.
+- **Training Accuracy** consistently increases over successive epochs, reflecting continuous improvement in the model's ability to learn gait-specific features.
+
+Overall, the training curves indicate that the proposed multimodal framework converges smoothly without exhibiting unstable optimisation behaviour.
+
+
+## 🏅 Recognition Performance
+
+The identification capability of the proposed framework was evaluated using the **Rank-1 Recognition Accuracy**, which measures the percentage of test samples whose correct identity is retrieved as the top match. Performance was analysed under three standard CASIA-B evaluation scenarios: **Normal Walking (NM)**, **Walking with a Bag (BG)**, and **Walking with a Coat (CL)**.
+
+<p align="center">
+  <img src="docs/rank1_table.png" width="700">
+</p>
+
+<p align="center">
+<b>Figure 3.</b> Rank-1 recognition accuracy achieved on the CASIA-B dataset under different walking conditions.
+</p>
+
+### Recognition Analysis
+
+The proposed multimodal framework achieved an **overall Rank-1 recognition accuracy of 75.20%**, demonstrating its effectiveness in learning discriminative gait representations.
+
+- **Normal Walking (NM): 98.00%**
+  
+  The highest recognition accuracy was achieved under normal walking conditions, indicating that the model effectively captures intrinsic gait characteristics when appearance variations are minimal.
+
+- **Walking with a Bag (BG): 82.24%**
+  
+  Recognition performance remained strong despite the additional appearance changes introduced by carried objects, demonstrating the robustness of the multimodal feature fusion strategy.
+
+- **Walking with a Coat (CL): 45.36%**
+  
+  Recognition accuracy decreased under heavy clothing variations, highlighting the challenge posed by significant changes in body silhouette. Although multimodal fusion improves robustness, clothing remains one of the most difficult factors affecting gait recognition.
+
+Overall, these results demonstrate that the proposed framework performs exceptionally well under normal conditions while maintaining reasonable robustness to moderate appearance variations.
+---
