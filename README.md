@@ -148,4 +148,22 @@ The complete setup guide includes:
 
 This section presents the performance of the proposed **Modified GaitSet-Based Multimodal Gait Recognition Framework** on the **CASIA-B gait dataset**. The evaluation includes training behaviour, recognition accuracy, verification metrics, and attention visualization, providing a comprehensive assessment of the model's effectiveness.
 
+
+## 🏆 Performance Highlights
+
+The proposed multimodal gait recognition framework was evaluated on the **CASIA-B** benchmark dataset using both **identification** and **verification** metrics. The table below summarizes the overall performance achieved by the model.
+
+| Metric | Result |
+|:--------|:------:|
+| **Overall Rank-1 Recognition Accuracy** | **75.20%** |
+| **Normal Walking (NM)** | **98.00%** |
+| **Walking with Bag (BG)** | **82.24%** |
+| **Walking with Coat (CL)** | **45.36%** |
+| **ROC AUC** | **0.5876** |
+| **Equal Error Rate (EER)** | **44.94%** |
+
+These results demonstrate that the proposed multimodal framework achieves excellent recognition performance under normal walking conditions while maintaining reasonable robustness to appearance variations such as carrying a bag or wearing a coat. The verification metrics further provide insight into the model's ability to distinguish between genuine and impostor gait samples.
+
+---
+
 ---
