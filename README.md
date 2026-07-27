@@ -332,4 +332,4 @@ The development of this project was made possible through the contributions of t
 
 - **PyTorch** and the open-source deep learning community for providing the deep learning framework used throughout model development, training, and evaluation.
 
-The author also expresses sincere gratitude to the faculty members and mentors whose guidance and support contributed to the successful completion of this academic project.
+I express my sincere gratitude to the faculty members and mentors whose guidance and support contributed to the successful completion of this academic project.
