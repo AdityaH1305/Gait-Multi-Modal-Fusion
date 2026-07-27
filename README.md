@@ -131,29 +131,11 @@ The CASIA-B dataset provides significant viewpoint and appearance variations, ma
 
 # 🚀 Getting Started
 
-Ready to reproduce the results or train the model?
+Want to reproduce the results or train the model yourself?
 
-The complete setup guide includes:
+The complete setup guide includes installation, environment configuration, dataset preparation, and training instructions.
 
-- ⚙️ Installation
-- 💻 System Requirements
-- 📂 Dataset Preparation
-- 🚀 Training & Evaluation Workflow
-
-# 🚀 Getting Started
-
-Welcome to the setup guide for the **Modified GaitSet-Based Multimodal Gait Recognition Framework**.
-
-This guide provides detailed instructions for configuring the environment, preparing the CASIA-B dataset, training the model, and evaluating its performance.
-
----
-
-## Contents
-
-1. Installation
-2. System Requirements
-3. Dataset Preparation
-4. Usage
+📖 **[Getting Started Guide](docs/GETTING_STARTED.md)**
 
 ---
 
