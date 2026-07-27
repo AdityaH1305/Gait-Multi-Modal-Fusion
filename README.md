@@ -143,3 +143,9 @@ The complete setup guide includes:
 ➡️ **[Open the Getting Started Guide](docs/GETTING_STARTED.md)**
 
 ---
+
+# 📊 Results & Performance
+
+This section presents the performance of the proposed **Modified GaitSet-Based Multimodal Gait Recognition Framework** on the **CASIA-B gait dataset**. The evaluation includes training behaviour, recognition accuracy, verification metrics, and attention visualization, providing a comprehensive assessment of the model's effectiveness.
+
+---
