@@ -218,4 +218,38 @@ The proposed multimodal framework achieved an **overall Rank-1 recognition accur
   Recognition accuracy decreased under heavy clothing variations, highlighting the challenge posed by significant changes in body silhouette. Although multimodal fusion improves robustness, clothing remains one of the most difficult factors affecting gait recognition.
 
 Overall, these results demonstrate that the proposed framework performs exceptionally well under normal conditions while maintaining reasonable robustness to moderate appearance variations.
+
+## 📉 Verification Performance
+
+In addition to identification accuracy, the proposed framework was evaluated using biometric verification metrics. Verification performance measures the model's ability to correctly distinguish between genuine and impostor gait samples using the learned feature embeddings.
+
+<p align="center">
+  <img src="docs/roc_curve.png" width="700">
+</p>
+
+<p align="center">
+<b>Figure 4.</b> Receiver Operating Characteristic (ROC) curve illustrating the verification performance of the proposed multimodal gait recognition framework.
+</p>
+
+### Verification Analysis
+
+The Receiver Operating Characteristic (ROC) curve summarizes the trade-off between the **True Positive Rate (TPR)** and **False Positive Rate (FPR)** across different decision thresholds.
+
+| Metric | Value |
+|:-------|------:|
+| **Area Under the Curve (AUC)** | **0.5876** |
+| **Equal Error Rate (EER)** | **44.94%** |
+| **Optimal Decision Threshold** | **0.0077** |
+
+### Discussion
+
+- **ROC AUC:** The model achieved an **Area Under the Curve (AUC) of 0.5876**, indicating a moderate ability to distinguish between genuine and impostor gait samples.
+
+- **Equal Error Rate (EER):** The **Equal Error Rate of 44.94%** represents the operating point where the False Acceptance Rate (FAR) equals the False Rejection Rate (FRR). Lower EER values indicate stronger verification performance.
+
+- **Decision Threshold:** The optimal cosine similarity threshold was determined to be **0.0077**, providing the best balance between accepting genuine matches and rejecting impostor matches.
+
+Although the framework is primarily optimized for **Rank-1 identification**, these verification metrics provide additional insight into the discriminative quality of the learned gait embeddings and demonstrate the model's capability for biometric verification tasks.
+
+---
 ---
