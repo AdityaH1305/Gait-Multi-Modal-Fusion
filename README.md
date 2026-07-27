@@ -140,7 +140,9 @@ The complete setup guide includes:
 - 📂 Dataset Preparation
 - 🚀 Training & Evaluation Workflow
 
-➡️ **[Open the Getting Started Guide](docs/GETTING_STARTED.md)**
+> [!TIP]
+> **Ready to get started?**  
+> 📘 **[Open the Getting Started Guide →](docs/GETTING_STARTED.md)**
 
 ---
 
