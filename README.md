@@ -126,3 +126,20 @@ The proposed framework has been trained and evaluated using the **CASIA-B Gait D
 | Gallery Sequences | NM-01 to NM-04 |
 
 The CASIA-B dataset provides significant viewpoint and appearance variations, making it an ideal benchmark for evaluating cross-view gait recognition algorithms.
+
+---
+
+# 🚀 Getting Started
+
+Ready to reproduce the results or train the model?
+
+The complete setup guide includes:
+
+- ⚙️ Installation
+- 💻 System Requirements
+- 📂 Dataset Preparation
+- 🚀 Training & Evaluation Workflow
+
+➡️ **[Open the Getting Started Guide](docs/GETTING_STARTED.md)**
+
+---
