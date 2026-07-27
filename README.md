@@ -164,6 +164,28 @@ The proposed multimodal gait recognition framework was evaluated on the **CASIA-
 
 These results demonstrate that the proposed multimodal framework achieves excellent recognition performance under normal walking conditions while maintaining reasonable robustness to appearance variations such as carrying a bag or wearing a coat. The verification metrics further provide insight into the model's ability to distinguish between genuine and impostor gait samples.
 
----
+
+## 📈 Training Performance
+
+The training process was monitored using three key metrics: **Cross-Entropy Loss**, **Batch-All Triplet Loss**, and **Training Accuracy**. Together, these metrics provide insight into the convergence behaviour of the proposed multimodal gait recognition framework.
+
+<p align="center">
+  <img src="docs/training_curves.png" width="850">
+</p>
+
+<p align="center">
+<b>Figure 2.</b> Training curves showing Cross-Entropy Loss, Batch-All Triplet Loss, and Training Accuracy over 150 epochs.
+</p>
+
+
+### Training Analysis
+
+The model demonstrates stable convergence throughout the training process.
+
+- **Cross-Entropy Loss** decreases steadily, indicating improved classification capability as training progresses.
+- **Batch-All Triplet Loss** reduces significantly, showing that the learned feature embeddings become increasingly discriminative by bringing samples of the same identity closer while separating different identities.
+- **Training Accuracy** consistently increases over successive epochs, reflecting continuous improvement in the model's ability to learn gait-specific features.
+
+Overall, the training curves indicate that the proposed multimodal framework converges smoothly without exhibiting unstable optimisation behaviour.
 
 ---
