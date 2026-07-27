@@ -89,3 +89,41 @@ Gait-Multi-Modal-Fusion
 └── README.md
 ```
 
+---
+
+# 🧠 Research Background
+
+Gait recognition is a behavioural biometric technique that identifies individuals by analysing the way they walk. Since gait can be captured at a distance without requiring user interaction, it has become an important research area for intelligent surveillance, border security, forensic investigations, and smart city applications.
+
+The original **GaitSet** architecture introduced a novel set-based representation for gait recognition by treating a gait sequence as an unordered collection of silhouette images. Although this significantly improved cross-view recognition, the framework relied solely on silhouette information, making it vulnerable to appearance variations such as heavy clothing and carried objects.
+
+To overcome these limitations, this project implements a **Modified GaitSet architecture** based on the research paper **"Research on Gait Recognition Based on GaitSet and Multimodal Fusion."** Instead of relying on a single input modality, the proposed framework combines **Silhouette Images** with **Gait Energy Images (GEI)** using a **Channel Attention-based Multimodal Fusion Module**.
+
+This multimodal representation enables the network to simultaneously learn:
+
+- Spatial body structure from silhouette images.
+- Temporal walking characteristics from GEI.
+- Adaptive feature importance using Channel Attention.
+
+The resulting feature representation is more discriminative and robust for cross-view gait recognition than conventional single-modal approaches.
+
+
+---
+
+# 📁 Dataset
+
+The proposed framework has been trained and evaluated using the **CASIA-B Gait Dataset**, one of the most widely used benchmark datasets for cross-view gait recognition.
+
+### Dataset Statistics
+
+| Property | Value |
+|----------|-------|
+| Dataset | CASIA-B |
+| Subjects | 124 |
+| Camera Views | 11 (0°–180°) |
+| Walking Conditions | Normal (NM), Bag Carrying (BG), Coat Wearing (CL) |
+| Gallery Subjects | 75–124 |
+| Probe Sequences | NM, BG, CL |
+| Gallery Sequences | NM-01 to NM-04 |
+
+The CASIA-B dataset provides significant viewpoint and appearance variations, making it an ideal benchmark for evaluating cross-view gait recognition algorithms.
