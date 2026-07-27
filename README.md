@@ -41,3 +41,51 @@ The complete pipeline covers:
 - ✅ Biometric verification using ROC-AUC and Equal Error Rate (EER)
 - ✅ GPU-accelerated implementation using PyTorch
 - ✅ Modular codebase for easy experimentation and future research
+
+---
+
+# 🏗️ Proposed System Architecture
+
+The proposed framework extends the original **GaitSet** architecture by integrating **Multimodal Feature Fusion** using **Silhouette Images** and **Gait Energy Images (GEI)**. A Channel Attention mechanism is employed to adaptively weight complementary features before generating the final gait embedding for identification and verification.
+
+<p align="center">
+  <img src="docs/architecture.png" width="950"/>
+</p>
+
+<p align="center">
+<b>Figure 1.</b> Complete architecture of the proposed Modified GaitSet-based Multimodal Gait Recognition Framework.
+</p>
+
+
+---
+
+# 📂 Repository Structure
+
+```text
+Gait-Multi-Modal-Fusion
+│
+├── docs/                     # Architecture and result images used in the README
+│
+├── GaitDatasetB-silh/         # Original CASIA-B silhouette dataset
+│
+├── Processed_CASIAB/          # Preprocessed dataset (.npy files)
+│
+├── results/                   # Evaluation results, plots and trained outputs
+│
+├── baseline_results/          # Baseline experiment results
+│
+├── gait_env/                  # Python virtual environment (optional)
+│
+├── preprocess.py              # Data preprocessing pipeline
+├── pack_npy.py                # Converts processed data into NumPy format
+├── dataset.py                 # CASIA-B dataset loader
+├── model.py                   # Modified GaitSet architecture
+├── train.py                   # Model training
+├── eval.py                    # Rank-1 evaluation
+├── compute_biometrics.py      # ROC, AUC and EER evaluation
+├── plot_view_matrix.py        # Cross-view accuracy visualization
+│
+├── requirements.txt
+└── README.md
+```
+
