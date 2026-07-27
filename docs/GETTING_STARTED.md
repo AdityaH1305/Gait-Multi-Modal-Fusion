@@ -115,3 +115,83 @@ For the best compatibility and reproducibility, it is recommended to use:
 - Windows 10/11 or a recent Linux distribution
 
 Although the project can run on a CPU, GPU acceleration is strongly recommended due to the computational requirements of deep learning model training.
+
+---
+
+# 📂 Dataset Preparation
+
+## CASIA-B Dataset
+
+This project uses the **CASIA-B Gait Dataset**, one of the most widely used benchmark datasets for gait recognition research.
+
+> **Note:** The CASIA-B dataset is **not included** in this repository due to licensing restrictions. It must be obtained separately from the official source.
+
+---
+
+## Directory Structure
+
+After downloading the dataset, organize it as follows:
+
+```text
+Gait-Multi-Modal-Fusion/
+│
+├── GaitDatasetB-silh/
+│   ├── 001/
+│   ├── 002/
+│   ├── ...
+│
+├── preprocess.py
+├── pack_npy.py
+└── ...
+```
+
+---
+
+## Step 1 — Preprocess the Dataset
+
+Run the preprocessing script:
+
+```bash
+python preprocess.py
+```
+
+The preprocessing pipeline performs the following operations automatically:
+
+- Adaptive background subtraction
+- Binary silhouette extraction
+- Subject localization and cropping
+- Centroid alignment
+- Spatial normalization (64 × 64 pixels)
+- Gait cycle organization
+- Gait Energy Image (GEI) generation
+
+The processed silhouettes and GEIs are stored for training.
+
+---
+
+## Step 2 — Package the Dataset
+
+Once preprocessing is complete, package the processed data into NumPy arrays.
+
+```bash
+python pack_npy.py
+```
+
+This script converts the processed dataset into an optimized format that can be efficiently loaded during model training and evaluation.
+
+---
+
+## Expected Dataset Layout
+
+After preprocessing, the project directory should resemble the following structure:
+
+```text
+Processed_CASIAB/
+├── silhouettes/
+├── gei/
+├── train/
+├── test/
+└── *.npy
+```
+
+These files are then used by the training and evaluation scripts.
