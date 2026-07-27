@@ -188,4 +188,34 @@ The model demonstrates stable convergence throughout the training process.
 
 Overall, the training curves indicate that the proposed multimodal framework converges smoothly without exhibiting unstable optimisation behaviour.
 
+
+## 🏅 Recognition Performance
+
+The identification capability of the proposed framework was evaluated using the **Rank-1 Recognition Accuracy**, which measures the percentage of test samples whose correct identity is retrieved as the top match. Performance was analysed under three standard CASIA-B evaluation scenarios: **Normal Walking (NM)**, **Walking with a Bag (BG)**, and **Walking with a Coat (CL)**.
+
+<p align="center">
+  <img src="docs/rank1_table.png" width="700">
+</p>
+
+<p align="center">
+<b>Figure 3.</b> Rank-1 recognition accuracy achieved on the CASIA-B dataset under different walking conditions.
+</p>
+
+### Recognition Analysis
+
+The proposed multimodal framework achieved an **overall Rank-1 recognition accuracy of 75.20%**, demonstrating its effectiveness in learning discriminative gait representations.
+
+- **Normal Walking (NM): 98.00%**
+  
+  The highest recognition accuracy was achieved under normal walking conditions, indicating that the model effectively captures intrinsic gait characteristics when appearance variations are minimal.
+
+- **Walking with a Bag (BG): 82.24%**
+  
+  Recognition performance remained strong despite the additional appearance changes introduced by carried objects, demonstrating the robustness of the multimodal feature fusion strategy.
+
+- **Walking with a Coat (CL): 45.36%**
+  
+  Recognition accuracy decreased under heavy clothing variations, highlighting the challenge posed by significant changes in body silhouette. Although multimodal fusion improves robustness, clothing remains one of the most difficult factors affecting gait recognition.
+
+Overall, these results demonstrate that the proposed framework performs exceptionally well under normal conditions while maintaining reasonable robustness to moderate appearance variations.
 ---
