@@ -49,7 +49,7 @@ The complete pipeline covers:
 The proposed framework extends the original **GaitSet** architecture by integrating **Multimodal Feature Fusion** using **Silhouette Images** and **Gait Energy Images (GEI)**. A Channel Attention mechanism is employed to adaptively weight complementary features before generating the final gait embedding for identification and verification.
 
 <p align="center">
-  <img src="docs/architecture.png" width="650">
+  <img src="docs/architecture.png" width="550">
 </p>
 
 <p align="center">
