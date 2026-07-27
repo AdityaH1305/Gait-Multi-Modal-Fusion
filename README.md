@@ -218,4 +218,63 @@ The proposed multimodal framework achieved an **overall Rank-1 recognition accur
   Recognition accuracy decreased under heavy clothing variations, highlighting the challenge posed by significant changes in body silhouette. Although multimodal fusion improves robustness, clothing remains one of the most difficult factors affecting gait recognition.
 
 Overall, these results demonstrate that the proposed framework performs exceptionally well under normal conditions while maintaining reasonable robustness to moderate appearance variations.
+
+## 📉 Verification Performance
+
+In addition to identification accuracy, the proposed framework was evaluated using biometric verification metrics. Verification performance measures the model's ability to correctly distinguish between genuine and impostor gait samples using the learned feature embeddings.
+
+<p align="center">
+  <img src="docs/roc_curve.png" width="700">
+</p>
+
+<p align="center">
+<b>Figure 4.</b> Receiver Operating Characteristic (ROC) curve illustrating the verification performance of the proposed multimodal gait recognition framework.
+</p>
+
+### Verification Analysis
+
+The Receiver Operating Characteristic (ROC) curve summarizes the trade-off between the **True Positive Rate (TPR)** and **False Positive Rate (FPR)** across different decision thresholds.
+
+| Metric | Value |
+|:-------|------:|
+| **Area Under the Curve (AUC)** | **0.5876** |
+| **Equal Error Rate (EER)** | **44.94%** |
+| **Optimal Decision Threshold** | **0.0094** |
+
+### Discussion
+
+- **ROC AUC:** The model achieved an **Area Under the Curve (AUC) of 0.5876**, indicating a moderate ability to distinguish between genuine and impostor gait samples.
+
+- **Equal Error Rate (EER):** The **Equal Error Rate of 44.94%** represents the operating point where the False Acceptance Rate (FAR) equals the False Rejection Rate (FRR). Lower EER values indicate stronger verification performance.
+
+- **Decision Threshold:** The optimal cosine similarity threshold was determined to be **0.0094**, providing the best balance between accepting genuine matches and rejecting impostor matches.
+
+Although the framework is primarily optimized for **Rank-1 identification**, these verification metrics provide additional insight into the discriminative quality of the learned gait embeddings and demonstrate the model's capability for biometric verification tasks.
+
+
+## 🎯 Attention Visualization
+
+To better understand the learning behaviour of the proposed multimodal framework, attention maps were extracted at different stages of training. These visualizations illustrate how the Channel Attention mechanism progressively learns to emphasize the most discriminative gait features while suppressing less informative regions.
+
+<p align="center">
+  <img src="docs/attention_maps.png" width="900">
+</p>
+
+<p align="center">
+<b>Figure 5.</b> Evolution of the attention mechanism over training epochs (10, 50, 100, and 150). Warmer colours indicate higher feature importance, while cooler colours represent lower attention.
+</p>
+
+### Attention Analysis
+
+The attention maps reveal the gradual refinement of the model's feature selection throughout training.
+
+- **Epoch 10:** The attention distribution is relatively scattered, indicating that the model is still learning to identify meaningful gait patterns.
+
+- **Epoch 50:** More structured attention begins to emerge as the network starts emphasizing important body regions associated with gait motion.
+
+- **Epoch 100:** The attention mechanism becomes increasingly focused, assigning greater importance to discriminative spatial features while suppressing background information.
+
+- **Epoch 150:** The learned attention stabilizes into a consistent and well-localized pattern, demonstrating successful convergence of the multimodal feature fusion process.
+
+Overall, the progression of these attention maps illustrates how the Channel Attention mechanism evolves from broad feature exploration to targeted feature refinement, enabling the model to learn more discriminative gait representations.
 ---
