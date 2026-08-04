@@ -1,88 +1,80 @@
-# 🚶 Advanced Cross-View Gait Recognition using Multimodal Fusion Networks
+# Cross-View Gait Recognition via Multimodal Fusion
 
-### A Deep Learning Framework for Robust Human Identification using a Modified GaitSet Architecture and Multimodal Feature Fusion
-
----
-
-## 📖 Overview
-
-Human gait is a unique behavioural biometric that enables the identification of individuals based solely on their walking pattern. Unlike traditional biometric modalities such as facial recognition or fingerprint analysis, gait recognition can identify subjects from a distance without requiring active user cooperation, making it highly suitable for intelligent surveillance, forensic investigations, and security applications.
-
-This repository presents a complete implementation of a **Modified GaitSet-based Multimodal Gait Recognition Framework**, inspired by the research paper **"Research on Gait Recognition Based on GaitSet and Multimodal Fusion."**
-
-The proposed system extends the original **GaitSet** architecture by integrating **Silhouette Images** and **Gait Energy Images (GEI)** through a **Channel Attention-based Multimodal Fusion Module**, allowing the network to simultaneously learn spatial body structure and temporal gait dynamics.
-
-The framework has been trained and evaluated on the **CASIA-B gait dataset**, demonstrating robust cross-view gait recognition under multiple walking conditions including:
-
-- Normal Walking (NM)
-- Bag Carrying (BG)
-- Coat Wearing (CL)
-
-The complete pipeline covers:
-
-- Video preprocessing
-- Silhouette extraction
-- GEI generation
-- Multimodal feature fusion
-- Deep feature embedding
-- Rank-1 gait identification
-- Open-set gait verification using ROC and EER analysis
+### A Deep Learning Pipeline for Human Identification Combining a Modified GaitSet Backbone with Multimodal Feature Fusion
 
 ---
 
-## ✨ Key Features
+## Introduction
 
-- ✅ Modified GaitSet architecture with Multimodal Feature Fusion
-- ✅ Dual-input learning using Silhouette Images and Gait Energy Images (GEI)
-- ✅ Channel Attention Mechanism for adaptive feature weighting
-- ✅ Complete preprocessing pipeline for the CASIA-B dataset
-- ✅ Cross-view gait recognition
-- ✅ Rank-1 Identification using Cosine Similarity
-- ✅ Biometric verification using ROC-AUC and Equal Error Rate (EER)
-- ✅ GPU-accelerated implementation using PyTorch
-- ✅ Modular codebase for easy experimentation and future research
+Gait is a behavioral biometric — it identifies people by how they walk rather than by a static physical trait. Because it can be captured from a distance and does not require the subject's cooperation, unlike face or fingerprint recognition, gait analysis is well suited to surveillance, forensics, and security applications.
+
+This repository contains a full implementation of a multimodal gait recognition framework built on a modified GaitSet backbone, based on the paper *"Research on Gait Recognition Based on GaitSet and Multimodal Fusion."*
+
+Rather than relying on silhouettes alone, the system fuses Silhouette Images with Gait Energy Images (GEI) through a channel attention-based fusion module, allowing the network to capture both the spatial structure of the body and the temporal rhythm of the gait cycle.
+
+The pipeline was trained and evaluated on the CASIA-B benchmark across three walking conditions:
+
+- Normal walking (NM)
+- Carrying a bag (BG)
+- Wearing a coat (CL)
+
+End to end, the project covers video preprocessing, silhouette extraction, GEI generation, multimodal feature fusion, deep embedding learning, Rank-1 identification, and open-set verification (ROC / EER).
 
 ---
 
-# 🏗️ Proposed System Architecture
+## Key Features
 
-The proposed framework extends the original **GaitSet** architecture by integrating **Multimodal Feature Fusion** using **Silhouette Images** and **Gait Energy Images (GEI)**. A Channel Attention mechanism is employed to adaptively weight complementary features before generating the final gait embedding for identification and verification.
+- Modified GaitSet backbone with multimodal fusion
+- Joint learning from silhouette images and GEI
+- Channel attention for adaptive feature weighting
+- End-to-end CASIA-B preprocessing pipeline
+- Cross-view recognition support
+- Cosine-similarity-based Rank-1 identification
+- Verification via ROC-AUC and Equal Error Rate (EER)
+- PyTorch implementation, GPU-accelerated
+- Modular codebase for experimentation
+
+---
+
+## Architecture
+
+The framework builds on GaitSet by adding a multimodal feature fusion stage that combines silhouette images with gait energy images. A channel attention module adaptively weights the two feature streams before they are merged into a single gait embedding, which is used for both identification and verification.
 
 <p align="center">
   <img src="docs/architecture.png" width="450">
 </p>
 
 <p align="center">
-<b>Figure 1.</b> Overall pipeline of the proposed Modified GaitSet-based Multimodal Gait Recognition Framework.
+<b>Figure 1.</b> End-to-end pipeline of the modified GaitSet multimodal framework.
 </p>
 
 ---
 
-# 📂 Repository Structure
+## Repository Layout
 
 ```text
 Gait-Multi-Modal-Fusion
 │
-├── docs/                     # Architecture and result images used in the README
+├── docs/                     # Images used in this README (architecture, results)
 │
-├── GaitDatasetB-silh/         # Original CASIA-B silhouette dataset
+├── GaitDatasetB-silh/         # Raw CASIA-B silhouettes
 │
-├── Processed_CASIAB/          # Preprocessed dataset (.npy files)
+├── Processed_CASIAB/          # Preprocessed data (.npy)
 │
-├── results/                   # Evaluation results, plots and trained outputs
+├── results/                   # Evaluation outputs and plots
 │
-├── baseline_results/          # Baseline experiment results
+├── baseline_results/          # Baseline experiment outputs
 │
-├── gait_env/                  # Python virtual environment (optional)
+├── gait_env/                  # Optional virtual environment
 │
-├── preprocess.py              # Data preprocessing pipeline
-├── pack_npy.py                # Converts processed data into NumPy format
+├── preprocess.py              # Preprocessing pipeline
+├── pack_npy.py                # Converts processed frames to .npy
 ├── dataset.py                 # CASIA-B dataset loader
-├── model.py                   # Modified GaitSet architecture
-├── train.py                   # Model training
+├── model.py                   # Modified GaitSet model definition
+├── train.py                   # Training script
 ├── eval.py                    # Rank-1 evaluation
-├── compute_biometrics.py      # ROC, AUC and EER evaluation
-├── plot_view_matrix.py        # Cross-view accuracy visualization
+├── compute_biometrics.py      # ROC / AUC / EER computation
+├── plot_view_matrix.py        # Cross-view accuracy heatmap
 │
 ├── requirements.txt
 └── README.md
@@ -90,241 +82,163 @@ Gait-Multi-Modal-Fusion
 
 ---
 
-# 🧠 Research Background
+## Background
 
-Gait recognition is a behavioural biometric technique that identifies individuals by analysing the way they walk. Since gait can be captured at a distance without requiring user interaction, it has become an important research area for intelligent surveillance, border security, forensic investigations, and smart city applications.
+Gait recognition identifies people from the pattern of their walk. Because it works at a distance and does not require cooperation, it has drawn sustained interest for surveillance, border control, forensics, and smart-city applications.
 
-The original **GaitSet** architecture introduced a novel set-based representation for gait recognition by treating a gait sequence as an unordered collection of silhouette images. Although this significantly improved cross-view recognition, the framework relied solely on silhouette information, making it vulnerable to appearance variations such as heavy clothing and carried objects.
+The original GaitSet model treated a walking sequence as an unordered set of silhouette frames, a design that pushed cross-view recognition forward considerably. Its main weakness is that it depends entirely on silhouette shape, which makes it sensitive to anything that changes the outline of the body, such as heavy coats or carried bags.
 
-To overcome these limitations, this project implements a **Modified GaitSet architecture** based on the research paper **"Research on Gait Recognition Based on GaitSet and Multimodal Fusion."** Instead of relying on a single input modality, the proposed framework combines **Silhouette Images** with **Gait Energy Images (GEI)** using a **Channel Attention-based Multimodal Fusion Module**.
+This project addresses that limitation with a modified GaitSet architecture, following the approach described in *"Research on Gait Recognition Based on GaitSet and Multimodal Fusion."* Instead of a single silhouette stream, the model fuses silhouette images with gait energy images (GEI) through a channel attention-based fusion module, so the network learns from:
 
-This multimodal representation enables the network to simultaneously learn:
+- Spatial body shape, from silhouettes
+- Temporal walking dynamics, from GEI
+- An adaptively weighted combination of the two, via channel attention
 
-- Spatial body structure from silhouette images.
-- Temporal walking characteristics from GEI.
-- Adaptive feature importance using Channel Attention.
-
-The resulting feature representation is more discriminative and robust for cross-view gait recognition than conventional single-modal approaches.
-
+The resulting embeddings are more discriminative and more resilient to appearance changes than a silhouette-only baseline.
 
 ---
 
-# 📁 Dataset
+## Dataset
 
-The proposed framework has been trained and evaluated using the **CASIA-B Gait Dataset**, one of the most widely used benchmark datasets for cross-view gait recognition.
-
-### Dataset Statistics
+Training and evaluation were carried out on CASIA-B, one of the standard benchmarks for cross-view gait recognition.
 
 | Property | Value |
 |----------|-------|
 | Dataset | CASIA-B |
 | Subjects | 124 |
-| Camera Views | 11 (0°–180°) |
-| Walking Conditions | Normal (NM), Bag Carrying (BG), Coat Wearing (CL) |
-| Gallery Subjects | 75–124 |
-| Probe Sequences | NM, BG, CL |
-| Gallery Sequences | NM-01 to NM-04 |
+| Camera views | 11 (0°–180°) |
+| Walking conditions | Normal (NM), Bag (BG), Coat (CL) |
+| Gallery subjects | 75–124 |
+| Probe sequences | NM, BG, CL |
+| Gallery sequences | NM-01 to NM-04 |
 
-The CASIA-B dataset provides significant viewpoint and appearance variations, making it an ideal benchmark for evaluating cross-view gait recognition algorithms.
-
----
-
-# 🚀 Getting Started
-
-Want to reproduce the results or train the model yourself?
-
-The complete setup guide includes installation, environment configuration, dataset preparation, and training instructions.
-
-📖 **[Getting Started Guide](docs/GETTING_STARTED.md)**
+CASIA-B's range of viewpoints and appearance conditions makes it a demanding, and informative, testbed for this type of model.
 
 ---
 
-# 📊 Results & Performance
+## Getting Started
 
-This section presents the performance of the proposed **Modified GaitSet-Based Multimodal Gait Recognition Framework** on the **CASIA-B gait dataset**. The evaluation includes training behaviour, recognition accuracy, verification metrics, and attention visualization, providing a comprehensive assessment of the model's effectiveness.
+To reproduce the results or train the model from scratch, see the full setup walkthrough, covering installation, environment configuration, dataset preparation, and training.
 
+**[Getting Started Guide](docs/GETTING_STARTED.md)**
 
-## 🏆 Performance Highlights
+---
 
-The proposed multimodal gait recognition framework was evaluated on the **CASIA-B** benchmark dataset using both **identification** and **verification** metrics. The table below summarizes the overall performance achieved by the model.
+## Results & Performance
+
+This section covers how the model trained, how accurately it identifies subjects, how well it performs at verification, and what its attention mechanism learned over the course of training.
+
+### Summary
 
 | Metric | Result |
 |:--------|:------:|
-| **Overall Rank-1 Recognition Accuracy** | **75.20%** |
-| **Normal Walking (NM)** | **98.00%** |
-| **Walking with Bag (BG)** | **82.24%** |
-| **Walking with Coat (CL)** | **45.36%** |
-| **ROC AUC** | **0.5876** |
-| **Equal Error Rate (EER)** | **44.94%** |
+| Overall Rank-1 accuracy | 75.20% |
+| Normal walking (NM) | 98.00% |
+| Bag carrying (BG) | 82.24% |
+| Coat wearing (CL) | 45.36% |
+| ROC AUC | 0.5876 |
+| Equal Error Rate (EER) | 44.94% |
 
-These results demonstrate that the proposed multimodal framework achieves excellent recognition performance under normal walking conditions while maintaining reasonable robustness to appearance variations such as carrying a bag or wearing a coat. The verification metrics further provide insight into the model's ability to distinguish between genuine and impostor gait samples.
+The model performs strongly under normal walking conditions and holds up reasonably well when a bag is introduced. Performance under heavy clothing is the clear weak point. The verification metrics offer a complementary view of how well the embeddings separate genuine samples from impostors.
 
+### Training Behavior
 
-## 📈 Training Performance
-
-The training process was monitored using three key metrics: **Cross-Entropy Loss**, **Batch-All Triplet Loss**, and **Training Accuracy**. Together, these metrics provide insight into the convergence behaviour of the proposed multimodal gait recognition framework.
+Training was tracked using cross-entropy loss, batch-all triplet loss, and training accuracy over 150 epochs.
 
 <p align="center">
   <img src="docs/training_curves.png" width="850">
 </p>
 
 <p align="center">
-<b>Figure 2.</b> Training curves showing Cross-Entropy Loss, Batch-All Triplet Loss, and Training Accuracy over 150 epochs.
+<b>Figure 2.</b> Cross-entropy loss, batch-all triplet loss, and training accuracy over 150 epochs.
 </p>
 
+Cross-entropy loss falls steadily, reflecting improving classification ability. Batch-all triplet loss drops substantially, showing that embeddings for the same identity are pulled together while different identities are pushed apart. Training accuracy rises consistently across epochs. Overall, training converges smoothly, with no signs of instability in the optimization.
 
-### Training Analysis
+### Identification Results
 
-The model demonstrates stable convergence throughout the training process.
-
-- **Cross-Entropy Loss** decreases steadily, indicating improved classification capability as training progresses.
-- **Batch-All Triplet Loss** reduces significantly, showing that the learned feature embeddings become increasingly discriminative by bringing samples of the same identity closer while separating different identities.
-- **Training Accuracy** consistently increases over successive epochs, reflecting continuous improvement in the model's ability to learn gait-specific features.
-
-Overall, the training curves indicate that the proposed multimodal framework converges smoothly without exhibiting unstable optimisation behaviour.
-
-
-## 🏅 Recognition Performance
-
-The identification capability of the proposed framework was evaluated using the **Rank-1 Recognition Accuracy**, which measures the percentage of test samples whose correct identity is retrieved as the top match. Performance was analysed under three standard CASIA-B evaluation scenarios: **Normal Walking (NM)**, **Walking with a Bag (BG)**, and **Walking with a Coat (CL)**.
+Rank-1 accuracy, the percentage of probes correctly matched to their identity as the top candidate, was measured separately for NM, BG, and CL conditions.
 
 <p align="center">
   <img src="docs/rank1_table.png" width="700">
 </p>
 
 <p align="center">
-<b>Figure 3.</b> Rank-1 recognition accuracy achieved on the CASIA-B dataset under different walking conditions.
+<b>Figure 3.</b> Rank-1 accuracy on CASIA-B across walking conditions.
 </p>
 
-### Recognition Analysis
+Normal walking achieved the best result, at 98.00%, reflecting the case where appearance variation is minimal and the model can rely on clean gait signal. Bag carrying dropped to 82.24%, a meaningful decline from NM but one the fusion strategy handles well given the moderate appearance change involved. Coat wearing fell to 45.36%, by far the largest drop. Heavy clothing substantially alters the silhouette, and this remains the hardest condition for gait recognition in general; multimodal fusion helps but does not fully resolve it.
 
-The proposed multimodal framework achieved an **overall Rank-1 recognition accuracy of 75.20%**, demonstrating its effectiveness in learning discriminative gait representations.
+The aggregate Rank-1 accuracy of 75.20% reflects strong performance on the easier conditions offset by the difficulty of the CL scenario.
 
-- **Normal Walking (NM): 98.00%**
-  
-  The highest recognition accuracy was achieved under normal walking conditions, indicating that the model effectively captures intrinsic gait characteristics when appearance variations are minimal.
+### Verification Results
 
-- **Walking with a Bag (BG): 82.24%**
-  
-  Recognition performance remained strong despite the additional appearance changes introduced by carried objects, demonstrating the robustness of the multimodal feature fusion strategy.
-
-- **Walking with a Coat (CL): 45.36%**
-  
-  Recognition accuracy decreased under heavy clothing variations, highlighting the challenge posed by significant changes in body silhouette. Although multimodal fusion improves robustness, clothing remains one of the most difficult factors affecting gait recognition.
-
-Overall, these results demonstrate that the proposed framework performs exceptionally well under normal conditions while maintaining reasonable robustness to moderate appearance variations.
-
-## 📉 Verification Performance
-
-In addition to identification accuracy, the proposed framework was evaluated using biometric verification metrics. Verification performance measures the model's ability to correctly distinguish between genuine and impostor gait samples using the learned feature embeddings.
+Beyond identification, the framework was evaluated on its ability to distinguish genuine matches from impostors.
 
 <p align="center">
   <img src="docs/roc_curve.png" width="700">
 </p>
 
 <p align="center">
-<b>Figure 4.</b> Receiver Operating Characteristic (ROC) curve illustrating the verification performance of the proposed multimodal gait recognition framework.
+<b>Figure 4.</b> ROC curve for the verification task.
 </p>
-
-### Verification Analysis
-
-The Receiver Operating Characteristic (ROC) curve summarizes the trade-off between the **True Positive Rate (TPR)** and **False Positive Rate (FPR)** across different decision thresholds.
 
 | Metric | Value |
 |:-------|------:|
-| **Area Under the Curve (AUC)** | **0.5876** |
-| **Equal Error Rate (EER)** | **44.94%** |
-| **Optimal Decision Threshold** | **0.0094** |
+| AUC | 0.5876 |
+| EER | 44.94% |
+| Optimal threshold | 0.0094 |
 
-### Discussion
+An AUC of 0.5876 indicates only moderate separability between genuine and impostor pairs. An EER of 44.94%, the point at which false acceptance and false rejection rates are equal, is fairly high, meaning verification is noticeably weaker than identification for this model. The threshold of 0.0094 is the cosine-similarity cutoff that best balances the two error types. Taken together, these numbers suggest the framework is currently better suited to closed-set Rank-1 identification than to open-set verification, though the embeddings still carry useful discriminative signal.
 
-- **ROC AUC:** The model achieved an **Area Under the Curve (AUC) of 0.5876**, indicating a moderate ability to distinguish between genuine and impostor gait samples.
+### Attention Visualization
 
-- **Equal Error Rate (EER):** The **Equal Error Rate of 44.94%** represents the operating point where the False Acceptance Rate (FAR) equals the False Rejection Rate (FRR). Lower EER values indicate stronger verification performance.
-
-- **Decision Threshold:** The optimal cosine similarity threshold was determined to be **0.0094**, providing the best balance between accepting genuine matches and rejecting impostor matches.
-
-Although the framework is primarily optimized for **Rank-1 identification**, these verification metrics provide additional insight into the discriminative quality of the learned gait embeddings and demonstrate the model's capability for biometric verification tasks.
-
-
-## 🎯 Attention Visualization
-
-To better understand the learning behaviour of the proposed multimodal framework, attention maps were extracted at different stages of training. These visualizations illustrate how the Channel Attention mechanism progressively learns to emphasize the most discriminative gait features while suppressing less informative regions.
+Attention maps were captured at several points during training to observe how the channel attention module's focus evolved.
 
 <p align="center">
   <img src="docs/attention_maps.png" width="600">
 </p>
 
 <p align="center">
-<b>Figure 5.</b> Evolution of the attention mechanism over training epochs (10, 50, 100, and 150). Warmer colours indicate higher feature importance, while cooler colours represent lower attention.
+<b>Figure 5.</b> Attention evolution at epochs 10, 50, 100, and 150 (warm colors indicate higher importance, cool colors indicate lower importance).
 </p>
 
-### Attention Analysis
+At epoch 10, attention is diffuse, and the model has not yet zeroed in on informative regions. By epoch 50, structure begins to emerge around body regions relevant to gait motion. By epoch 100, focus sharpens further, with background regions increasingly suppressed. By epoch 150, attention settles into a stable, well-localized pattern.
 
-The attention maps reveal the gradual refinement of the model's feature selection throughout training.
-
-- **Epoch 10:** The attention distribution is relatively scattered, indicating that the model is still learning to identify meaningful gait patterns.
-
-- **Epoch 50:** More structured attention begins to emerge as the network starts emphasizing important body regions associated with gait motion.
-
-- **Epoch 100:** The attention mechanism becomes increasingly focused, assigning greater importance to discriminative spatial features while suppressing background information.
-
-- **Epoch 150:** The learned attention stabilizes into a consistent and well-localized pattern, demonstrating successful convergence of the multimodal feature fusion process.
-
-Overall, the progression of these attention maps illustrates how the Channel Attention mechanism evolves from broad feature exploration to targeted feature refinement, enabling the model to learn more discriminative gait representations.
----
-
-
-# ⚠️ Limitations
-
-While the proposed multimodal gait recognition framework demonstrates promising performance on the CASIA-B dataset, several limitations remain that provide opportunities for future research.
-
-- **Reduced Performance Under Heavy Clothing**
-
-  Recognition accuracy decreases significantly when subjects wear long coats or loose clothing (CL scenario). Such appearance variations alter the body silhouette and partially obscure gait-related features, making discrimination more challenging.
-
-- **Dependence on Silhouette Quality**
-
-  The framework relies on accurate silhouette extraction during preprocessing. Background noise, segmentation errors, or incomplete silhouettes can negatively impact the quality of the extracted gait representations.
-
-- **Dataset-Specific Evaluation**
-
-  The model has been evaluated exclusively on the CASIA-B benchmark dataset. Although CASIA-B provides diverse viewpoints and walking conditions, additional evaluation on other public datasets would provide a broader assessment of generalisation capability.
-
-- **Limited Environmental Variations**
-
-  The current implementation assumes relatively controlled capture conditions. Performance under challenging environments, such as poor illumination, occlusions, crowded scenes, or uneven terrain, has not been investigated.
+This progression, from broad exploration to targeted focus, tracks with the steady gains seen in the training curves and reflects successful convergence of the fusion mechanism.
 
 ---
 
-# 🔮 Future Work
+## Limitations
 
-Several directions can be explored to further improve the robustness and applicability of the proposed gait recognition framework.
+**Sensitivity to clothing.** CL accuracy (45.36%) lags well behind NM and BG, since heavy or loose clothing obscures the silhouette that the model partly relies on.
 
-- Develop clothing-invariant feature extraction methods to improve recognition under significant appearance variations.
+**Dependence on silhouette quality.** The pipeline's output is only as good as the silhouette extraction step; segmentation noise or incomplete masks degrade downstream features.
 
-- Incorporate skeleton-based or pose-guided representations alongside silhouette and GEI features to capture complementary motion information.
+**Single-dataset evaluation.** All results reported here are on CASIA-B; generalization to other gait datasets has not been tested.
 
-- Investigate advanced attention mechanisms and transformer-based architectures for enhanced multimodal feature fusion.
-
-- Evaluate the framework on additional gait recognition datasets to assess cross-dataset generalisation and robustness.
-
-- Extend the framework to real-world surveillance environments with varying illumination, background clutter, and occlusions.
-
-- Optimise the model for real-time deployment on edge devices through model compression and inference acceleration techniques.
+**Controlled-capture assumption.** The current setup does not account for poor lighting, occlusion, crowding, or uneven terrain, all of which are common in real-world deployments.
 
 ---
 
-# 🙏 Acknowledgements
+## Future Work
 
-The development of this project was made possible through the contributions of the research community and the availability of open datasets and software frameworks. The author would like to acknowledge the following resources:
+- Clothing-invariant feature extraction to close the CL performance gap
+- Skeleton- or pose-based features alongside silhouette and GEI for complementary motion cues
+- Transformer-based or other advanced attention mechanisms for fusion
+- Cross-dataset evaluation to test generalization beyond CASIA-B
+- Adaptation to real-world surveillance conditions, including lighting, clutter, and occlusion
+- Model compression and inference optimization for edge deployment
 
-- **CASIA-B Gait Dataset** for providing one of the most widely used benchmark datasets for gait recognition research.
+---
 
-- **[GaitSet: Cross-View Gait Recognition Through Utilizing Gait As a Deep Set](https://ieeexplore.ieee.org/document/9351667)** for introducing the set-based gait representation framework that forms the foundation of this implementation.
+## Acknowledgements
 
-- **[Research on Gait Recognition Based on GaitSet and Multimodal Fusion](https://ieeexplore.ieee.org/document/10852208)** for inspiring the multimodal attention-based feature fusion strategy implemented in this project.
+This project builds on prior open research and public datasets:
 
-- **PyTorch** and the open-source deep learning community for providing the deep learning framework used throughout model development, training, and evaluation.
+- **CASIA-B Gait Dataset**, the benchmark dataset used throughout this work.
+- **[GaitSet: Cross-View Gait Recognition Through Utilizing Gait As a Deep Set](https://ieeexplore.ieee.org/document/9351667)**, the set-based representation this implementation extends.
+- **[Research on Gait Recognition Based on GaitSet and Multimodal Fusion](https://ieeexplore.ieee.org/document/10852208)**, the source of the multimodal attention-fusion approach used here.
+- **PyTorch** and its open-source community, on which the implementation is built.
 
-I express my sincere gratitude to the faculty members and mentors whose guidance and support contributed to the successful completion of this academic project.
+Thanks also to the faculty and mentors who supported this project's development.
