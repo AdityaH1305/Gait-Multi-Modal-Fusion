@@ -1,6 +1,6 @@
-# 🚀 Getting Started
+# Getting Started
 
-Welcome to the setup guide for the **Modified GaitSet-Based Multimodal Gait Recognition Framework**.
+Welcome to the setup guide for the Modified GaitSet-Based Multimodal Gait Recognition Framework.
 
 This guide provides detailed instructions for configuring the environment, preparing the CASIA-B dataset, training the model, and evaluating its performance.
 
@@ -15,11 +15,11 @@ This guide provides detailed instructions for configuring the environment, prepa
 
 ---
 
-# ⚙️ Installation
+## Installation
 
 Follow the steps below to set up the project on your local machine.
 
-## 1. Clone the Repository
+### 1. Clone the Repository
 
 Clone the repository using Git:
 
@@ -28,9 +28,7 @@ git clone https://github.com/AdityaH1305/Gait-Multi-Modal-Fusion.git
 cd Gait-Multi-Modal-Fusion
 ```
 
----
-
-## 2. Create a Virtual Environment
+### 2. Create a Virtual Environment
 
 It is recommended to use a dedicated Python virtual environment.
 
@@ -40,21 +38,19 @@ python -m venv gait_env
 
 Activate the environment.
 
-### Windows
+**Windows**
 
 ```bash
 gait_env\Scripts\activate
 ```
 
-### Linux / macOS
+**Linux / macOS**
 
 ```bash
 source gait_env/bin/activate
 ```
 
----
-
-## 3. Install Dependencies
+### 3. Install Dependencies
 
 Install all required Python packages.
 
@@ -62,25 +58,22 @@ Install all required Python packages.
 pip install -r requirements.txt
 ```
 
----
-
-## 4. Verify the Installation
+### 4. Verify the Installation
 
 Confirm that Python and PyTorch are installed correctly.
 
 ```bash
 python --version
 python -c "import torch; print(torch.__version__)"
-
 ```
 
 ---
 
-# 💻 System Requirements
+## System Requirements
 
 The project was developed and tested using the following software and hardware configuration.
 
-## Software Requirements
+### Software Requirements
 
 | Component | Version |
 |-----------|---------|
@@ -88,14 +81,12 @@ The project was developed and tested using the following software and hardware c
 | PyTorch | 2.7.1 |
 | CUDA Toolkit | 11.8 |
 | TorchVision | Compatible with PyTorch 2.7.1 |
-| NumPy | Latest Stable Version |
-| OpenCV | Latest Stable Version |
-| Pillow | Latest Stable Version |
-| Matplotlib | Latest Stable Version |
+| NumPy | Latest stable version |
+| OpenCV | Latest stable version |
+| Pillow | Latest stable version |
+| Matplotlib | Latest stable version |
 
----
-
-## Hardware Configuration
+### Hardware Configuration
 
 | Component | Specification |
 |-----------|---------------|
@@ -103,32 +94,28 @@ The project was developed and tested using the following software and hardware c
 | GPU Memory | 6 GB VRAM |
 | CUDA Version | 11.8 |
 
----
+### Recommended Environment
 
-## Recommended Environment
-
-For the best compatibility and reproducibility, it is recommended to use:
+For the best compatibility and reproducibility, the following setup is recommended:
 
 - Python 3.11
 - CUDA 11.8
 - NVIDIA GPU with CUDA support
 - Windows 10/11 or a recent Linux distribution
 
-Although the project can run on a CPU, GPU acceleration is strongly recommended due to the computational requirements of deep learning model training.
+The project can run on CPU, but GPU acceleration is strongly recommended given the computational demands of training a deep learning model.
 
 ---
 
-# 📂 Dataset Preparation
+## Dataset Preparation
 
-## CASIA-B Dataset
+### CASIA-B Dataset
 
-This project uses the **CASIA-B Gait Dataset**, one of the most widely used benchmark datasets for gait recognition research.
+This project uses the CASIA-B Gait Dataset, one of the most widely used benchmark datasets for gait recognition research.
 
-> **Note:** The CASIA-B dataset is **not included** in this repository due to licensing restrictions. It must be obtained separately from the official source.
+> **Note:** The CASIA-B dataset is not included in this repository due to licensing restrictions. It must be obtained separately from the official source.
 
----
-
-## Directory Structure
+### Directory Structure
 
 After downloading the dataset, organize it as follows:
 
@@ -145,9 +132,7 @@ Gait-Multi-Modal-Fusion/
 └── ...
 ```
 
----
-
-## Step 1 — Preprocess the Dataset
+### Step 1 — Preprocess the Dataset
 
 Run the preprocessing script:
 
@@ -167,9 +152,7 @@ The preprocessing pipeline performs the following operations automatically:
 
 The processed silhouettes and GEIs are stored for training.
 
----
-
-## Step 2 — Package the Dataset
+### Step 2 — Package the Dataset
 
 Once preprocessing is complete, package the processed data into NumPy arrays.
 
@@ -179,9 +162,7 @@ python pack_npy.py
 
 This script converts the processed dataset into an optimized format that can be efficiently loaded during model training and evaluation.
 
----
-
-## Expected Dataset Layout
+### Expected Dataset Layout
 
 After preprocessing, the project directory should resemble the following structure:
 
@@ -198,13 +179,11 @@ These files are then used by the training and evaluation scripts.
 
 ---
 
-# 🚀 Usage
+## Usage
 
 The complete workflow for training and evaluating the proposed multimodal gait recognition framework is outlined below.
 
----
-
-## Step 1 — Preprocess the Dataset
+### Step 1 — Preprocess the Dataset
 
 Extract silhouettes, perform spatial normalization, and generate Gait Energy Images (GEIs).
 
@@ -212,9 +191,7 @@ Extract silhouettes, perform spatial normalization, and generate Gait Energy Ima
 python preprocess.py
 ```
 
----
-
-## Step 2 — Package the Dataset
+### Step 2 — Package the Dataset
 
 Convert the processed dataset into NumPy arrays for efficient loading during training.
 
@@ -222,9 +199,7 @@ Convert the processed dataset into NumPy arrays for efficient loading during tra
 python pack_npy.py
 ```
 
----
-
-## Step 3 — Train the Model
+### Step 3 — Train the Model
 
 Train the modified GaitSet model with multimodal feature fusion.
 
@@ -236,13 +211,11 @@ During training, the framework:
 
 - Extracts silhouette features using the spatial branch
 - Extracts GEI features using the temporal branch
-- Applies Channel Attention for multimodal feature fusion
+- Applies channel attention for multimodal feature fusion
 - Learns discriminative gait embeddings using Batch-All Triplet Loss
 - Saves the best-performing model checkpoints
 
----
-
-## Step 4 — Evaluate the Model
+### Step 4 — Evaluate the Model
 
 Evaluate the trained model on the test dataset.
 
@@ -252,15 +225,13 @@ python eval.py
 
 The evaluation reports:
 
-- Rank-1 Recognition Accuracy
+- Rank-1 recognition accuracy
 - Cross-view recognition performance
-- NM (Normal Walking) accuracy
-- BG (Walking with Bag) accuracy
-- CL (Walking with Coat) accuracy
+- NM (normal walking) accuracy
+- BG (walking with bag) accuracy
+- CL (walking with coat) accuracy
 
----
-
-## Step 5 — Compute Biometric Metrics
+### Step 5 — Compute Biometric Metrics
 
 Generate verification metrics for the trained model.
 
@@ -270,14 +241,12 @@ python compute_biometrics.py
 
 This script computes:
 
-- Receiver Operating Characteristic (ROC) Curve
+- Receiver Operating Characteristic (ROC) curve
 - Area Under the Curve (AUC)
 - Equal Error Rate (EER)
-- Optimal Decision Threshold
+- Optimal decision threshold
 
----
-
-## Typical Workflow
+### Typical Workflow
 
 The complete execution pipeline is shown below.
 
@@ -305,9 +274,7 @@ Compute ROC & EER
 (compute_biometrics.py)
 ```
 
----
-
-## Output Files
+### Output Files
 
 After training and evaluation, the project generates:
 
