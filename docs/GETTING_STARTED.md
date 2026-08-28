@@ -140,17 +140,15 @@ Run the preprocessing script:
 python preprocess.py
 ```
 
-The preprocessing pipeline performs the following operations automatically:
+CASIA-B ships with silhouettes already extracted, so this step normalizes them rather than segmenting them. For each frame the pipeline:
 
-- Adaptive background subtraction
-- Binary silhouette extraction
-- Subject localization and cropping
-- Centroid alignment
-- Spatial normalization (64 × 64 pixels)
-- Gait cycle organization
-- Gait Energy Image (GEI) generation
+- Crops to the bounding box of the non-zero foreground pixels
+- Resizes to 64 × 64 using cubic interpolation
+- Averages all frames in a sequence into a Gait Energy Image (GEI)
 
-The processed silhouettes and GEIs are stored for training.
+The normalized silhouettes and the GEI are written per sequence.
+
+> **Known limitation.** Cropping to the bounding box and resizing to a square does not preserve aspect ratio. Because the bounding box widens and narrows across the gait cycle as the limbs swing, each frame is stretched by a different factor, and subject height is discarded. Height-preserving, centroid-aligned normalization is planned work.
 
 ### Step 2 — Package the Dataset
 
@@ -164,18 +162,26 @@ This script converts the processed dataset into an optimized format that can be 
 
 ### Expected Dataset Layout
 
-After preprocessing, the project directory should resemble the following structure:
+After preprocessing and packing, each sequence lives in its own `subject / condition / angle` folder:
 
 ```text
 Processed_CASIAB/
-├── silhouettes/
-├── gei/
-├── train/
-├── test/
-└── *.npy
+├── 001/                        # subject (001-124)
+│   ├── nm-01/                  # condition: nm-01..06, bg-01..02, cl-01..02
+│   │   ├── 000/                # camera angle (000, 018, ... 180)
+│   │   │   ├── frame_001.png   # normalized silhouettes, 64x64
+│   │   │   ├── ...
+│   │   │   ├── 001_nm_000_GEI.png
+│   │   │   ├── frames.npy      # (N, 64, 64) uint8  <- written by pack_npy.py
+│   │   │   └── gei.npy         # (64, 64)   uint8  <- written by pack_npy.py
+│   │   └── ...
+│   └── ...
+└── ...
 ```
 
-These files are then used by the training and evaluation scripts.
+Training and evaluation read the `.npy` files exclusively, since loading a single array is far faster than reading roughly 80 individual PNGs per sequence.
+
+Subjects 001–074 form the training split; 075–124 are held out for testing.
 
 ---
 
@@ -209,31 +215,52 @@ python train.py
 
 During training, the framework:
 
-- Extracts silhouette features using the spatial branch
-- Extracts GEI features using the temporal branch
-- Applies channel attention for multimodal feature fusion
-- Learns discriminative gait embeddings using Batch-All Triplet Loss
-- Saves the best-performing model checkpoints
+- Extracts frame-set features using the dynamic branch, with Set Pooling across frames
+- Extracts GEI features using the static branch
+- Applies spatial attention for multimodal feature fusion
+- Optimizes cross-entropy on the classifier head together with a batch-hard triplet loss on the 256-D embedding, using PK-structured batches of P identities × K sequences
+- Saves the final checkpoint to `results/fused_gait_model.pth`
+
+> **Note.** There is currently no validation split, so the checkpoint written is the one from the last epoch rather than the best-scoring one.
 
 ### Step 4 — Evaluate the Model
 
-Evaluate the trained model on the test dataset.
+Evaluate the trained model on the held-out test subjects (075–124).
 
 ```bash
 python eval.py
 ```
 
+`eval.py` is the only script that loads the model. It runs a single GPU pass and writes `results/embeddings.npz`, which the two reporting scripts then consume, so the model never runs more than once per evaluation.
+
 The evaluation reports:
 
-- Rank-1 recognition accuracy
-- Cross-view recognition performance
-- NM (normal walking) accuracy
-- BG (walking with bag) accuracy
-- CL (walking with coat) accuracy
+- Rank-1 accuracy per walking condition (NM, BG, CL)
+- The full 11 × 11 cross-view matrix, with the identical-view diagonal excluded
+- A same-view reference figure for comparison
+- A sanity check on genuine versus impostor similarity
 
-### Step 5 — Compute Biometric Metrics
+Useful flags:
 
-Generate verification metrics for the trained model.
+```bash
+python eval.py --show-matrix           # print the full 11x11 matrices
+python eval.py --frame-budget 1536     # raise if you have more than 6 GB VRAM
+python eval.py --weights path/to.pth   # evaluate a different checkpoint
+```
+
+> **Note on VRAM.** Batching is driven by a total frame budget rather than a fixed batch size, because the dynamic branch reshapes to `(B x N, 1, 64, 64)` before the first convolution — memory therefore scales with sequences × frames, not sequences. The default of 768 peaks near 3.7 GB on a 6 GB card.
+
+### Step 5 — Plot the Cross-View Matrix
+
+```bash
+python plot_view_matrix.py
+```
+
+Renders `results/cross_view_accuracy_matrix.png`, one 11 × 11 heatmap per walking condition on a shared color scale.
+
+### Step 6 — Compute Biometric Metrics
+
+Generate verification metrics from the same embeddings.
 
 ```bash
 python compute_biometrics.py
@@ -241,10 +268,12 @@ python compute_biometrics.py
 
 This script computes:
 
-- Receiver Operating Characteristic (ROC) curve
+- ROC curves per condition plus a combined curve
 - Area Under the Curve (AUC)
-- Equal Error Rate (EER)
-- Optimal decision threshold
+- Equal Error Rate (EER) and the threshold at which it occurs
+- Genuine versus impostor score distributions
+
+Identical-view pairs are excluded by default to match the Rank-1 protocol; pass `--include-same-view` to include them.
 
 ### Typical Workflow
 
@@ -254,34 +283,33 @@ The complete execution pipeline is shown below.
 Download CASIA-B
         │
         ▼
-Preprocess Dataset
-(preprocess.py)
+Preprocess Dataset ......... preprocess.py
         │
         ▼
-Package Dataset
-(pack_npy.py)
+Package Dataset ............ pack_npy.py
         │
         ▼
-Train Model
-(train.py)
+Train Model ................ train.py    -> results/fused_gait_model.pth
         │
         ▼
-Evaluate Model
-(eval.py)
-        │
-        ▼
-Compute ROC & EER
-(compute_biometrics.py)
+Evaluate Model ............. eval.py     -> results/embeddings.npz
+        │                                   (single GPU pass)
+        ├──────────────────────────┐
+        ▼                          ▼
+Cross-view heatmap          ROC / AUC / EER
+plot_view_matrix.py         compute_biometrics.py
 ```
 
 ### Output Files
 
-After training and evaluation, the project generates:
+| Path | Produced by | Contents |
+|:-----|:------------|:---------|
+| `results/fused_gait_model.pth` | `train.py` | Trained model weights |
+| `results/training_curves.png` | `train.py` | Cross-entropy loss, triplet loss, accuracy |
+| `results/attention_maps/` | `train.py` | Attention masks captured every 10 epochs |
+| `results/embeddings.npz` | `eval.py` | Gallery, probe and template embeddings, labels, cross-view matrices |
+| `results/cross_view_accuracy_matrix.png` | `plot_view_matrix.py` | 11 × 11 heatmaps per condition |
+| `results/gait_verification_roc.png` | `compute_biometrics.py` | ROC curves |
+| `results/score_distributions.png` | `compute_biometrics.py` | Genuine versus impostor score histograms |
 
-- Trained model checkpoints (`.pth`)
-- Training accuracy and loss curves
-- Rank-1 recognition results
-- ROC curve
-- Equal Error Rate (EER)
-- Attention map visualizations
-- Evaluation logs
+`results/embeddings.npz` is a derived artifact and is git-ignored; regenerate it by re-running `eval.py`.

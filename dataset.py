@@ -267,7 +267,17 @@ class GaitMultiModalDataset(Dataset):
 def gait_collate_fn(
     batch: List[SampleTensors],
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Collate gait samples into a batch, padding frames if necessary."""
+    """Collate gait samples into a batch, padding frames if necessary.
+
+    Padding CYCLES each sequence's own frames rather than appending zeros.
+    Set Pooling is an element-wise max over the frame axis, so repeating a
+    frame that is already in the set is a provable no-op:
+    ``max(a, b, a) == max(a, b)``.
+
+    Zero-padding would be incorrect - an all-zero frame still produces
+    non-zero activations after Conv -> BatchNorm -> ReLU, and those compete
+    in the max, silently contaminating short sequences.
+    """
     frames_list, gei_list, label_list = zip(*batch)
 
     max_frames: int = max(f.shape[0] for f in frames_list)
@@ -278,10 +288,10 @@ def gait_collate_fn(
     else:
         padded: List[torch.Tensor] = []
         for f in frames_list:
-            n, h, w = f.shape
+            n = f.shape[0]
             if n < max_frames:
-                padding = torch.zeros(max_frames - n, h, w, dtype=f.dtype)
-                f = torch.cat([f, padding], dim=0)
+                idx = torch.arange(max_frames) % n
+                f = f[idx]
             padded.append(f)
         batch_frames = torch.stack(padded)
 
