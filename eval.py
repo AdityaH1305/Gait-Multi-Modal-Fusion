@@ -169,11 +169,21 @@ class SequenceRecord:
 
 def discover_and_cache_sequences(
     data_dir: str,
+    subject_range=TEST_SUBJECT_RANGE,
+    verbose: bool = True,
 ) -> Tuple[List[SequenceRecord], Dict[str, List[SequenceRecord]]]:
-    """Walk test subjects, load ALL data into RAM, partition into Gallery/Probes.
+    """Walk subjects, load ALL data into RAM, partition into Gallery/Probes.
 
     Every frame of every sequence is retained - Set Pooling does not care how
     many frames it is given, so subsampling at test time only discards signal.
+
+    Args:
+        data_dir:      Root directory containing per-subject folders.
+        subject_range: Which subject IDs to load.  Defaults to the held-out
+            test split (075-124).  ``train.py`` passes a smaller range to run
+            the same gallery/probe protocol on validation identities.
+        verbose:       Print cache statistics.  Disabled by the training loop,
+            which calls this once and does not want the noise.
 
     Returns:
         gallery_records: Gallery sequences (nm-01..nm-04).
@@ -187,7 +197,7 @@ def discover_and_cache_sequences(
 
     # First pass: collect all (subject, condition, angle, seq_dir) tuples
     work_items: List[Tuple[str, str, str, str]] = []
-    for subj_id in TEST_SUBJECT_RANGE:
+    for subj_id in subject_range:
         subject = f"{subj_id:03d}"
         subject_dir = os.path.join(data_dir, subject)
         if not os.path.isdir(subject_dir):
@@ -215,8 +225,11 @@ def discover_and_cache_sequences(
     skipped = 0
     degenerate: List[str] = []
 
-    print(f"[Eval] Pre-caching {len(work_items)} sequences into RAM (all frames)...")
-    for subject, condition, angle, seq_dir in tqdm(work_items, desc="Loading data"):
+    if verbose:
+        print(f"[Eval] Pre-caching {len(work_items)} sequences into RAM (all frames)...")
+    for subject, condition, angle, seq_dir in tqdm(
+        work_items, desc="Loading data", disable=not verbose
+    ):
         result = load_sequence(seq_dir)
         if result is None:
             skipped += 1
@@ -233,8 +246,11 @@ def discover_and_cache_sequences(
         if condition in condition_to_probe:
             probe_dict[condition_to_probe[condition]].append(rec)
 
-    if skipped > 0:
+    if skipped > 0 and verbose:
         print(f"[Eval] WARNING: {skipped} sequences skipped (missing data).")
+
+    if not verbose:
+        return gallery_records, probe_dict
 
     # ── Frame statistics ──
     all_recs = gallery_records + [r for v in probe_dict.values() for r in v]
@@ -333,6 +349,7 @@ def extract_embeddings(
     records: List[SequenceRecord],
     device: torch.device,
     frame_budget: int = DEFAULT_FRAME_BUDGET,
+    verbose: bool = True,
 ) -> np.ndarray:
     """Extract L2-normalised embeddings for a list of pre-cached sequences.
 
@@ -355,7 +372,7 @@ def extract_embeddings(
 
     out = np.zeros((len(records), model.embed_dim), dtype=np.float32)
 
-    for batch in tqdm(batches, desc="  Extracting", leave=False):
+    for batch in tqdm(batches, desc="  Extracting", leave=False, disable=not verbose):
         target_n = max(n_frames_list[i] for i in batch)
 
         frames_batch = np.stack([_tile_pad(records[i].frames, target_n) for i in batch])
@@ -696,8 +713,31 @@ def main() -> None:
         print(f"  [ERROR] Weights file not found: {args.weights}")
         sys.exit(1)
 
-    model = GlobalLocalFusedNetwork(num_classes=args.num_classes).to(device)
-    state_dict = torch.load(args.weights, map_location=device, weights_only=True)
+    # Checkpoints written by train.py are dicts carrying their own config, so
+    # the head type and class count never have to be supplied by hand.  Raw
+    # state_dicts (the Phase 1 checkpoint) are still accepted, falling back to
+    # the CLI defaults.
+    ckpt = torch.load(args.weights, map_location=device, weights_only=True)
+
+    if isinstance(ckpt, dict) and "state_dict" in ckpt:
+        state_dict = ckpt["state_dict"]
+        num_classes = int(ckpt.get("num_classes", args.num_classes))
+        head = str(ckpt.get("head", "linear"))
+        embed_dim = int(ckpt.get("embed_dim", 256))
+        print(f"  Checkpoint config: head={head}, num_classes={num_classes}, "
+              f"embed_dim={embed_dim}")
+        if "epoch" in ckpt:
+            print(f"  Saved at epoch {int(ckpt['epoch'])}"
+                  + (f" (val Rank-1 {float(ckpt['val_rank1']):.2f}%)"
+                     if "val_rank1" in ckpt else ""))
+    else:
+        state_dict = ckpt
+        num_classes, head, embed_dim = args.num_classes, "linear", 256
+        print(f"  Raw state_dict: assuming head=linear, num_classes={num_classes}")
+
+    model = GlobalLocalFusedNetwork(
+        num_classes=num_classes, embed_dim=embed_dim, head=head
+    ).to(device)
     model.load_state_dict(state_dict)
     model.eval()
 

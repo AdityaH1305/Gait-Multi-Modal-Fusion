@@ -53,6 +53,13 @@ class GaitMultiModalDataset(Dataset):
         data_dir: Root directory containing per-subject folders.
         is_train: If ``True``, load subjects 001–074 (training split).
             If ``False``, load subjects 075–124 (gallery/probe split).
+        subject_range: Explicit set of subject IDs to load, overriding
+            ``is_train``.  Used to carve a validation split out of the
+            training identities (e.g. ``range(1, 65)`` to train on 001–064
+            while 065–074 are held back for model selection).
+        set_size: Frames sampled per sequence during training.
+        occlusion_aug: Probability of applying coat/bag occlusion
+            augmentation.  ``0.0`` disables it.
     """
 
     # LST protocol boundary (inclusive upper bound for training subjects)
@@ -70,17 +77,26 @@ class GaitMultiModalDataset(Dataset):
     # │  • Reduces per-sample compute by ~40%                           │
     # │  • Implicit data augmentation (different subset each epoch)     │
     # └──────────────────────────────────────────────────────────────────┘
-    _TRAIN_SET_SIZE: int = 30
+    _TRAIN_SET_SIZE: int = 20
 
-    def __init__(self, data_dir: str, is_train: bool = True) -> None:
+    def __init__(
+        self,
+        data_dir: str,
+        is_train: bool = True,
+        subject_range: range = None,
+        set_size: int = None,
+        occlusion_aug: float = 0.0,
+    ) -> None:
         super().__init__()
 
         self.data_dir = data_dir
         self.is_train = is_train
+        self._set_size = set_size if set_size is not None else self._TRAIN_SET_SIZE
 
         # Online augmentation settings (applied only during training)
         self._flip_prob: float = 0.5
         self._crop_margin: int = 2
+        self._occlusion_prob: float = occlusion_aug
 
         # ------------------------------------------------------------------
         # 1. DISCOVER SUBJECTS & BUILD LABEL MAP
@@ -90,7 +106,10 @@ class GaitMultiModalDataset(Dataset):
             s for s in all_entries if os.path.isdir(os.path.join(data_dir, s))
         ]
 
-        if self.is_train:
+        if subject_range is not None:
+            allowed = set(subject_range)
+            subjects = [s for s in subjects if int(s) in allowed]
+        elif self.is_train:
             subjects = [s for s in subjects if int(s) <= self._TRAIN_SUBJECT_UPPER]
         else:
             subjects = [s for s in subjects if int(s) > self._TRAIN_SUBJECT_UPPER]
@@ -201,7 +220,7 @@ class GaitMultiModalDataset(Dataset):
         # ── 2. RANDOM SET SAMPLING (training only) ──
         if self.is_train:
             N_full: int = all_frames.shape[0]
-            k: int = self._TRAIN_SET_SIZE
+            k: int = self._set_size
 
             if N_full >= k:
                 indices = np.random.choice(N_full, k, replace=False)
@@ -243,6 +262,38 @@ class GaitMultiModalDataset(Dataset):
                 gei = cv2.resize(
                     cropped_gei, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
                 )
+
+            # ── 3b. OCCLUSION AUGMENTATION (coat / bag simulation) ──
+            # ┌──────────────────────────────────────────────────────────┐
+            # │  The two conditions the model fails on, BG and CL, are  │
+            # │  both partial occlusions of the silhouette: a coat      │
+            # │  obscures the torso, a bag obscures one side of it.     │
+            # │  Neither is represented anywhere in the NM training     │
+            # │  data, so the model never learns to cope with a         │
+            # │  corrupted region.                                      │
+            # │                                                         │
+            # │  The occlusion is applied to the SAME region in every   │
+            # │  frame and in the GEI, because a real coat or bag does  │
+            # │  not move between frames.  Randomising it per frame     │
+            # │  would simulate flicker, not clothing.                  │
+            # └──────────────────────────────────────────────────────────┘
+            if self._occlusion_prob > 0 and random.random() < self._occlusion_prob:
+                h, w = frames_array.shape[-2], frames_array.shape[-1]
+
+                if random.random() < 0.5:
+                    # Coat: horizontal band across the torso (upper-middle body)
+                    band_h = random.randint(h // 8, h // 4)
+                    top = random.randint(h // 6, h // 2)
+                    frames_array[:, top : top + band_h, :] = 0
+                    gei[top : top + band_h, :] = 0
+                else:
+                    # Bag: blob on one side of the torso
+                    blob_h = random.randint(h // 8, h // 4)
+                    blob_w = random.randint(w // 6, w // 3)
+                    top = random.randint(h // 5, h // 2)
+                    left = 0 if random.random() < 0.5 else max(0, w - blob_w)
+                    frames_array[:, top : top + blob_h, left : left + blob_w] = 0
+                    gei[top : top + blob_h, left : left + blob_w] = 0
 
         # ── 4. CONVERT TO PYTORCH TENSORS & NORMALIZE ──
         # GEI: add channel dim → (1, 64, 64)
@@ -327,11 +378,33 @@ class PKBatchSampler(Sampler):
     │  from — every single gradient step is informative.              │
     └──────────────────────────────────────────────────────────────────┘
 
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  EPOCH LENGTH — the bug this class used to have:                │
+    │                                                                 │
+    │  __len__ previously returned `len(unique_labels) // P`, i.e. it │
+    │  treated one epoch as a single pass over IDENTITIES rather than │
+    │  over sequences.  With 74 identities and P=4 that is just 18    │
+    │  batches per epoch — 288 of 8,107 training sequences, or 3.6%   │
+    │  of the data.  Combined with 2-step gradient accumulation it    │
+    │  gave 9 optimizer steps per epoch, and 1,350 for a full 150-    │
+    │  epoch run.  The model never came close to converging: cross-   │
+    │  entropy started at ln(74)=4.30 and only reached 3.12.          │
+    │                                                                 │
+    │  Worse, the formula made the problem WORSE as P grew — raising  │
+    │  P to 8 would have halved the number of batches.                │
+    │                                                                 │
+    │  An epoch is now defined by the number of SEQUENCES, so it      │
+    │  scales the way you would expect: at P=8, K=8 over 8,107        │
+    │  sequences it yields 126 batches covering 8,064 of them.        │
+    └──────────────────────────────────────────────────────────────────┘
+
     Args:
         labels:  The full list of integer identity labels from the dataset
                  (i.e., ``dataset._labels``).
-        P:       Number of distinct identities per batch.  Default ``4``.
-        K:       Number of sequences sampled per identity.  Default ``4``.
+        P:       Number of distinct identities per batch.  Default ``8``.
+        K:       Number of sequences sampled per identity.  Default ``8``.
+        batches_per_epoch: Override the epoch length.  Defaults to
+                 ``len(labels) // (P * K)``, i.e. one full pass over the data.
 
     Yields:
         A list of ``P × K`` dataset indices forming one mini-batch.
@@ -339,15 +412,16 @@ class PKBatchSampler(Sampler):
     Note:
         If an identity has fewer than ``K`` sequences in the dataset,
         sequences are oversampled **with replacement** to fill the quota.
-        With CASIA-B training split (74 subjects, ~110 sequences each),
-        this almost never triggers.
+        With CASIA-B training split (~110 sequences per subject), this
+        almost never triggers.
     """
 
     def __init__(
         self,
         labels: List[int],
-        P: int = 4,
-        K: int = 4,
+        P: int = 8,
+        K: int = 8,
+        batches_per_epoch: int = None,
     ) -> None:
         self.P = P
         self.K = K
@@ -366,31 +440,35 @@ class PKBatchSampler(Sampler):
                 f"but the dataset only has {len(self.unique_labels)}."
             )
 
+        # ── Epoch length: one full pass over SEQUENCES, not identities ──
+        if batches_per_epoch is None:
+            batches_per_epoch = max(1, len(labels) // (P * K))
+        self.batches_per_epoch = batches_per_epoch
+
         # ── Report statistics ──
         seqs_per_id = [len(v) for v in self.label_to_indices.values()]
+        covered = self.batches_per_epoch * P * K
         print(
             f"[PKBatchSampler] {len(self.unique_labels)} identities | "
-            f"P={P}, K={K} → batch_size={P * K} | "
+            f"P={P}, K={K} -> batch_size={P * K} | "
             f"Seqs/identity: min={min(seqs_per_id)}, "
             f"max={max(seqs_per_id)}, "
-            f"mean={np.mean(seqs_per_id):.0f} | "
-            f"Batches/epoch={len(self)}"
+            f"mean={np.mean(seqs_per_id):.0f}"
+        )
+        print(
+            f"[PKBatchSampler] Batches/epoch={self.batches_per_epoch} | "
+            f"Sequences seen/epoch={covered:,} of {len(labels):,} "
+            f"({covered / max(1, len(labels)) * 100:.0f}%)"
         )
 
     def __iter__(self):
         """Yield PK-structured batches for one epoch.
 
-        At the start of each epoch, the identity order is shuffled so
-        different identity combinations appear in different epochs.
+        Each batch draws P distinct identities at random, then K sequences
+        for each of them.
         """
-        # Shuffle identity order for this epoch
-        shuffled_labels = self.unique_labels.copy()
-        random.shuffle(shuffled_labels)
-
-        # Iterate through identities in groups of P
-        num_batches = len(shuffled_labels) // self.P
-        for batch_i in range(num_batches):
-            batch_labels = shuffled_labels[batch_i * self.P : (batch_i + 1) * self.P]
+        for _ in range(self.batches_per_epoch):
+            batch_labels = random.sample(self.unique_labels, self.P)
             batch_indices: List[int] = []
 
             for label in batch_labels:
@@ -408,8 +486,8 @@ class PKBatchSampler(Sampler):
             yield batch_indices
 
     def __len__(self) -> int:
-        """Number of PK batches per epoch (drops incomplete final group)."""
-        return len(self.unique_labels) // self.P
+        """Number of PK batches per epoch."""
+        return self.batches_per_epoch
 
 
 # ---------------------------------------------------------------------------

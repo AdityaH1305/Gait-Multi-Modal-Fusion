@@ -197,6 +197,102 @@ class MultimodalFusion(nn.Module):
 
 
 # ---------------------------------------------------------------------------
+# Classifier heads
+# ---------------------------------------------------------------------------
+
+class CosFaceHead(nn.Module):
+    """Additive-margin cosine classifier (CosFace / AM-Softmax).
+
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │  WHY THIS REPLACES nn.Linear:                                       │
+    │                                                                      │
+    │  The embedding fed to the classifier is L2-normalised, so a plain   │
+    │  nn.Linear can produce a logit no larger than ‖w‖.  In the          │
+    │  previously trained checkpoint the weight row norms averaged only   │
+    │  2.16, which puts a HARD FLOOR on cross-entropy: even a perfect     │
+    │  classifier (correct class at cosine 1.0, all others at 0.0) still  │
+    │  incurs CE ≈ 2.24, against ln(74) = 4.30 for random guessing.       │
+    │  The loss literally could not converge.                             │
+    │                                                                      │
+    │  CosFace removes the cap with an explicit scale factor `s`, and     │
+    │  adds an angular margin `m` that is subtracted from the true class  │
+    │  only.  The margin is what makes the embedding useful for OPEN-SET  │
+    │  matching: it forces a gap between classes rather than merely a     │
+    │  correct ranking, which is precisely what a global verification     │
+    │  threshold needs.                                                   │
+    └──────────────────────────────────────────────────────────────────────┘
+
+    Args:
+        embed_dim:   Dimensionality of the input embedding.
+        num_classes: Number of identity classes.
+        s:           Logit scale.  The usual lower bound is
+                     ``sqrt(2) * ln(C - 1)``, about 6.07 for 74 classes,
+                     so the default of 16 has comfortable headroom.
+        m:           Additive cosine margin.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_classes: int,
+        s: float = 16.0,
+        m: float = 0.2,
+    ) -> None:
+        super().__init__()
+
+        self.s = s
+        self.m = m
+
+        self.weight = nn.Parameter(torch.empty(num_classes, embed_dim))
+        nn.init.xavier_normal_(self.weight)
+
+        # Scales the margin from 0 → 1 during early training.  Ramping avoids
+        # destabilising a freshly initialised embedding, which has no angular
+        # structure yet for a margin to act on.
+        self.register_buffer("margin_scale", torch.ones(()))
+
+    def set_margin_scale(self, value: float) -> None:
+        """Set the margin ramp factor (0.0 = no margin, 1.0 = full margin)."""
+        self.margin_scale.fill_(float(value))
+
+    def forward(
+        self,
+        embeddings: torch.Tensor,
+        labels: torch.Tensor = None,
+    ) -> torch.Tensor:
+        """Compute scaled (and optionally margin-penalised) cosine logits.
+
+        Args:
+            embeddings: ``(B, embed_dim)``, already L2-normalised by the model.
+            labels:     ``(B,)`` ground-truth classes.  When ``None`` (i.e. at
+                        inference) no margin is applied, so evaluation code can
+                        call the model without labels.
+
+        Returns:
+            Logits of shape ``(B, num_classes)``.
+        """
+        # Run in fp32 even under autocast: cosine similarities live in
+        # [-1, 1], where fp16 resolution is coarse enough to distort the
+        # margin subtraction.
+        with torch.amp.autocast("cuda", enabled=False):
+            emb = F.normalize(embeddings.float(), p=2, dim=1)
+            wgt = F.normalize(self.weight.float(), p=2, dim=1)
+            cosine = F.linear(emb, wgt).clamp(-1.0, 1.0)
+
+            if labels is None:
+                return self.s * cosine
+
+            margin = self.m * float(self.margin_scale)
+            one_hot = torch.zeros_like(cosine)
+            one_hot.scatter_(1, labels.view(-1, 1), 1.0)
+
+            return self.s * (cosine - one_hot * margin)
+
+    def extra_repr(self) -> str:
+        return f"s={self.s}, m={self.m}"
+
+
+# ---------------------------------------------------------------------------
 # End-to-end Model (Split-Head for Joint Loss)
 # ---------------------------------------------------------------------------
 
@@ -242,10 +338,18 @@ class GlobalLocalFusedNetwork(nn.Module):
     _FEAT_HEIGHT: int = 16
     _FEAT_WIDTH: int = 16
 
-    def __init__(self, num_classes: int = 74, embed_dim: int = 256) -> None:
+    def __init__(
+        self,
+        num_classes: int = 74,
+        embed_dim: int = 256,
+        head: str = "linear",
+        cosface_scale: float = 16.0,
+        cosface_margin: float = 0.2,
+    ) -> None:
         super().__init__()
 
         self.embed_dim = embed_dim
+        self.head_type = head
 
         # ── Dual branches + attention fusion ──
         self.branch_a = DynamicBranch()
@@ -268,21 +372,39 @@ class GlobalLocalFusedNetwork(nn.Module):
         self.embed_bn = nn.BatchNorm1d(embed_dim)
 
         # ── CLASSIFICATION HEAD ──
-        # Operates on the L2-normalised embeddings.  Because the inputs
-        # are unit-norm, the weight vectors learn angular decision
-        # boundaries (similar to CosFace / ArcFace).
-        self.classifier = nn.Linear(embed_dim, num_classes)
+        # Operates on the L2-normalised embeddings.
+        #
+        # "linear" reproduces the original behaviour and is kept so the
+        # Phase 1 baseline stays reproducible.  Note its limitation: with a
+        # unit-norm input the largest possible logit is ‖w‖, which caps how
+        # far cross-entropy can fall (see CosFaceHead).
+        #
+        # "cosface" is the intended setting — it applies an explicit scale
+        # and angular margin, removing that cap.
+        if head == "cosface":
+            self.classifier = CosFaceHead(
+                embed_dim, num_classes, s=cosface_scale, m=cosface_margin
+            )
+        elif head == "linear":
+            self.classifier = nn.Linear(embed_dim, num_classes)
+        else:
+            raise ValueError(f"Unknown head type: {head!r} (expected 'linear' or 'cosface')")
 
     def forward(
         self,
         frames: torch.Tensor,
         gei: torch.Tensor,
+        labels: torch.Tensor = None,
     ) -> tuple:
         """Run the full forward pass: branch extraction → fusion → split head.
 
         Args:
             frames: Silhouette frame set, shape ``(B, N, 64, 64)``.
             gei: Gait Energy Image, shape ``(B, 1, 64, 64)``.
+            labels: Ground-truth classes, ``(B,)``.  Only used by the CosFace
+                head, which needs them to apply the margin.  Leave as ``None``
+                at inference — evaluation code calls ``model(frames, gei)``
+                unchanged and receives unmargined logits it then discards.
 
         Returns:
             A 2-tuple of:
@@ -307,7 +429,10 @@ class GlobalLocalFusedNetwork(nn.Module):
         embeddings = F.normalize(embeddings, p=2, dim=1) # (B, 256), ||e|| = 1
 
         # ── Classification head: embeddings → logits ──
-        logits = self.classifier(embeddings)             # (B, num_classes)
+        if self.head_type == "cosface":
+            logits = self.classifier(embeddings, labels)  # (B, num_classes)
+        else:
+            logits = self.classifier(embeddings)          # (B, num_classes)
 
         return logits, embeddings
 
@@ -317,31 +442,52 @@ class GlobalLocalFusedNetwork(nn.Module):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  Split-Head Model — Smoke Test")
-    print("=" * 60)
+    import math
 
-    model = GlobalLocalFusedNetwork(num_classes=74, embed_dim=256)
+    dummy_frames = torch.randn(4, 45, 64, 64)   # 45 silhouette frames, batch=4
+    dummy_gei = torch.randn(4, 1, 64, 64)       # 1 GEI image per sample
+    dummy_labels = torch.tensor([0, 1, 2, 3])
 
-    # Simulate DataLoader outputs
-    dummy_frames = torch.randn(2, 45, 64, 64)  # 45 silhouette frames, batch=2
-    dummy_gei = torch.randn(2, 1, 64, 64)      # 1 GEI image per sample
+    for head in ("linear", "cosface"):
+        print("=" * 62)
+        print(f"  Split-Head Model - Smoke Test  (head={head})")
+        print("=" * 62)
 
-    logits, embeddings = model(dummy_frames, dummy_gei)
+        model = GlobalLocalFusedNetwork(num_classes=74, embed_dim=256, head=head)
+        model.eval()
 
-    print(f"Logits shape:     {logits.shape}")       # (2, 74)
-    print(f"Embeddings shape: {embeddings.shape}")   # (2, 256)
+        # Inference path: no labels, exactly how eval.py calls the model
+        logits, embeddings = model(dummy_frames, dummy_gei)
+        print(f"Logits shape:     {tuple(logits.shape)}")
+        print(f"Embeddings shape: {tuple(embeddings.shape)}")
 
-    # Verify L2 normalisation
-    norms = torch.norm(embeddings, p=2, dim=1)
-    print(f"Embedding norms:  {norms.tolist()}")     # Should be [1.0, 1.0]
-    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-5), \
-        "Embeddings are not unit-normalised!"
-    print("[OK] Embeddings are unit-normalised (L2 norm = 1.0)")
+        norms = torch.norm(embeddings, p=2, dim=1)
+        assert torch.allclose(norms, torch.ones_like(norms), atol=1e-5), \
+            "Embeddings are not unit-normalised!"
+        print("[OK] Embeddings are unit-normalised (L2 norm = 1.0)")
 
-    # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\nTotal parameters:     {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    print(f"Embedding dimension:  {model.embed_dim}")
+        # Training path: labels supplied
+        logits_train, _ = model(dummy_frames, dummy_gei, dummy_labels)
+        assert logits_train.shape == logits.shape
+        print("[OK] Forward pass accepts labels (training path)")
+
+        if head == "cosface":
+            delta = (logits - logits_train)[torch.arange(4), dummy_labels]
+            expected = model.classifier.s * model.classifier.m
+            assert torch.allclose(delta, torch.full_like(delta, expected), atol=1e-3), \
+                f"margin not applied correctly: {delta.tolist()}"
+            print(f"[OK] Margin applied to the true class only (s*m = {expected:.2f})")
+
+        # How far can cross-entropy actually fall with this head?
+        best = torch.zeros(1, 74)
+        if head == "cosface":
+            best[0, 0] = model.classifier.s
+        else:
+            best[0, 0] = model.classifier.weight.norm(dim=1).mean()
+        floor = F.cross_entropy(best, torch.tensor([0])).item()
+        print(f"     Best-case cross-entropy with this head: {floor:.4f}"
+              f"   (random = {math.log(74):.2f})")
+
+        total_params = sum(p.numel() for p in model.parameters())
+        print(f"Total parameters:     {total_params:,}")
+        print()
