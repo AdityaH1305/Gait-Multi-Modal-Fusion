@@ -39,6 +39,7 @@ Usage:
 import argparse
 import json
 import os
+import sys
 import time
 from typing import Dict, List, Tuple
 
@@ -261,6 +262,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--frame-budget", type=int, default=eval_mod.DEFAULT_FRAME_BUDGET,
                    help="Frame budget for validation embedding extraction.")
 
+    p.add_argument("--allow-partial", action="store_true",
+                   help="Train even if the dataset is missing identities or the "
+                        "validation split is empty. Off by default, so an "
+                        "interrupted preprocessing run fails loudly instead of "
+                        "silently training on a fraction of the data.")
     p.add_argument("--smoke-test", action="store_true",
                    help="Run 2 short epochs on a few identities to verify the pipeline. "
                         "Saves nothing. Takes about a minute.")
@@ -339,6 +345,24 @@ def train_model() -> None:
 
     num_classes = train_dataset.num_classes
 
+    # ── Dataset completeness guard ─────────────────────────────────────
+    # An interrupted preprocessing run leaves a partially populated data
+    # directory.  Training silently proceeded on it once, producing a model
+    # fitted to a fraction of the identities with no validation split and
+    # therefore no best checkpoint.  Fail loudly instead.
+    expected_classes = len(train_range)
+    if num_classes < expected_classes and not args.smoke_test:
+        msg = (f"found only {num_classes} of the {expected_classes} expected "
+               f"training identities in '{args.data_dir}'")
+        if not args.allow_partial:
+            print(f"\n[ERROR] Dataset looks incomplete: {msg}.")
+            print("  Preprocessing was probably interrupted. Finish it with:")
+            print(f"    python preprocess.py --output-dir {args.data_dir} "
+                  f"--npy-only --resume")
+            print("  Or pass --allow-partial to train on what is there anyway.")
+            sys.exit(1)
+        print(f"\n[WARN] Dataset incomplete ({msg}) - continuing on --allow-partial.")
+
     pk_sampler = PKBatchSampler(train_dataset._labels, P=args.p, K=args.k)
     train_loader = DataLoader(
         train_dataset,
@@ -362,6 +386,17 @@ def train_model() -> None:
         n_probe = sum(len(v) for v in val_probes.values())
         print(f"  {len(val_gallery)} gallery + {n_probe} probe sequences")
         if not val_gallery:
+            # Without validation there is no best checkpoint, so eval.py would
+            # later fail to find best_model.pth. Stop rather than discover that
+            # after a 40-minute run.
+            if not args.allow_partial:
+                print(f"\n[ERROR] No validation sequences for subjects "
+                      f"{val_range.start:03d}-{val_range.stop - 1:03d} in "
+                      f"'{args.data_dir}'.")
+                print("  Without them no best_model.pth is written and model")
+                print("  selection is impossible. Finish preprocessing, or pass")
+                print("  --no-val to train deliberately without validation.")
+                sys.exit(1)
             print("  [WARN] No validation sequences found; disabling validation.")
             use_val = False
 

@@ -276,24 +276,41 @@ class GaitMultiModalDataset(Dataset):
             # │  frame and in the GEI, because a real coat or bag does  │
             # │  not move between frames.  Randomising it per frame     │
             # │  would simulate flicker, not clothing.                  │
+            # │                                                         │
+            # │  Placement is relative to the SILHOUETTE, not the image │
+            # │  border.  With aspect-preserving preprocessing the body │
+            # │  occupies only ~24 of 64 columns, so a blob anchored to │
+            # │  the image edge would land on empty background and      │
+            # │  occlude nothing at all.                                │
             # └──────────────────────────────────────────────────────────┘
             if self._occlusion_prob > 0 and random.random() < self._occlusion_prob:
-                h, w = frames_array.shape[-2], frames_array.shape[-1]
+                # Locate the body from the GEI: it is the temporal average, so
+                # it covers the full extent the silhouette reaches.
+                cols = np.where(gei.sum(axis=0) > 0)[0]
+                rows = np.where(gei.sum(axis=1) > 0)[0]
 
-                if random.random() < 0.5:
-                    # Coat: horizontal band across the torso (upper-middle body)
-                    band_h = random.randint(h // 8, h // 4)
-                    top = random.randint(h // 6, h // 2)
-                    frames_array[:, top : top + band_h, :] = 0
-                    gei[top : top + band_h, :] = 0
-                else:
-                    # Bag: blob on one side of the torso
-                    blob_h = random.randint(h // 8, h // 4)
-                    blob_w = random.randint(w // 6, w // 3)
-                    top = random.randint(h // 5, h // 2)
-                    left = 0 if random.random() < 0.5 else max(0, w - blob_w)
-                    frames_array[:, top : top + blob_h, left : left + blob_w] = 0
-                    gei[top : top + blob_h, left : left + blob_w] = 0
+                if len(cols) > 0 and len(rows) > 0:
+                    x0, x1 = int(cols[0]), int(cols[-1])
+                    y0, y1 = int(rows[0]), int(rows[-1])
+                    body_h = y1 - y0 + 1
+                    body_w = x1 - x0 + 1
+
+                    if random.random() < 0.5:
+                        # Coat: horizontal band across the torso.  Spanning the
+                        # full image width is fine - the body is a subset of it.
+                        band_h = max(1, random.randint(body_h // 8, body_h // 4))
+                        top = y0 + random.randint(body_h // 6, body_h // 2)
+                        frames_array[:, top : top + band_h, :] = 0
+                        gei[top : top + band_h, :] = 0
+                    else:
+                        # Bag: blob against the left or right edge of the BODY
+                        blob_h = max(1, random.randint(body_h // 8, body_h // 4))
+                        blob_w = max(2, random.randint(max(2, body_w // 3),
+                                                       max(3, body_w // 2)))
+                        top = y0 + random.randint(body_h // 5, body_h // 2)
+                        left = x0 if random.random() < 0.5 else max(x0, x1 - blob_w + 1)
+                        frames_array[:, top : top + blob_h, left : left + blob_w] = 0
+                        gei[top : top + blob_h, left : left + blob_w] = 0
 
         # ── 4. CONVERT TO PYTORCH TENSORS & NORMALIZE ──
         # GEI: add channel dim → (1, 64, 64)
