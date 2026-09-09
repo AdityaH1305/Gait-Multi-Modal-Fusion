@@ -165,6 +165,62 @@ def run_validation(
 # Plotting
 # ═══════════════════════════════════════════════════════════════════════════
 
+CHECKPOINT_NAME = "last_checkpoint.pth"
+
+# Config fields that must match when resuming.  Changing any of these mid-run
+# would silently produce a model that is not what either command line asked
+# for, so a mismatch is refused rather than warned about.
+RESUME_CRITICAL_FIELDS = (
+    "head", "lr", "p", "k", "frames", "accum", "scale", "margin",
+    "data_dir", "train_upper", "val_upper", "occlusion_aug", "flip_prob",
+    "warmup_epochs", "epochs", "no_val",
+)
+
+
+def save_checkpoint(
+    path: str,
+    model,
+    optimizer,
+    scheduler,
+    scaler,
+    epoch: int,
+    history: Dict,
+    best_val: float,
+    best_epoch: int,
+    num_classes: int,
+    args,
+) -> None:
+    """Write a resumable checkpoint atomically.
+
+    Written to a temporary file and then renamed, because ``os.replace`` is
+    atomic: an interrupt during the write leaves the previous good checkpoint
+    intact rather than a truncated file that would fail to load.
+
+    Note: Python and NumPy RNG states are deliberately not saved.  Restoring
+    them would require ``weights_only=False`` on load, and the only cost of
+    omitting them is that the augmentation stream differs after a resume,
+    which does not affect training.
+    """
+    payload = {
+        "state_dict": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "scaler": scaler.state_dict(),
+        "epoch": epoch,                 # number of epochs COMPLETED
+        "history": history,
+        "best_val": best_val,
+        "best_epoch": best_epoch,
+        "num_classes": num_classes,
+        "head": args.head,
+        "embed_dim": 256,
+        "config": vars(args),
+    }
+
+    tmp = path + ".tmp"
+    torch.save(payload, tmp)
+    os.replace(tmp, path)
+
+
 def save_curves(history: Dict, out_path: str, epochs: int) -> None:
     """Four-panel training summary, including the validation curve.
 
@@ -262,6 +318,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--frame-budget", type=int, default=eval_mod.DEFAULT_FRAME_BUDGET,
                    help="Frame budget for validation embedding extraction.")
 
+    p.add_argument("--resume", action="store_true",
+                   help="Continue an interrupted run from results/<run-name>/"
+                        "last_checkpoint.pth. All other arguments must match "
+                        "the original run.")
     p.add_argument("--allow-partial", action="store_true",
                    help="Train even if the dataset is missing identities or the "
                         "validation split is empty. Off by default, so an "
@@ -453,11 +513,62 @@ def train_model() -> None:
     }
     best_val = -1.0
     best_epoch = -1
+    start_epoch = 0
+
+    # ── Resume ─────────────────────────────────────────────────────────
+    ckpt_path = os.path.join(out_dir, CHECKPOINT_NAME)
+    ckpt_exists = os.path.exists(ckpt_path)
+
+    if args.resume and not ckpt_exists:
+        print(f"\n[ERROR] --resume given but no checkpoint at {ckpt_path}.")
+        sys.exit(1)
+
+    if ckpt_exists and not args.resume and not args.smoke_test:
+        # Refuse to silently overwrite an interrupted run's progress.
+        print(f"\n[ERROR] An interrupted run already exists at {ckpt_path}.")
+        print("  Continue it with  --resume")
+        print(f"  Or start over by deleting {out_dir} or choosing a new --run-name.")
+        sys.exit(1)
+
+    if args.resume:
+        ck = torch.load(ckpt_path, map_location=device, weights_only=True)
+
+        # A resumed run must be the same experiment, or the result is a model
+        # that matches neither command line.
+        old_cfg = ck.get("config", {})
+        mismatched = [
+            f"{k}: {old_cfg.get(k)!r} -> {getattr(args, k)!r}"
+            for k in RESUME_CRITICAL_FIELDS
+            if k in old_cfg and old_cfg[k] != getattr(args, k, None)
+        ]
+        if mismatched:
+            print("\n[ERROR] Resume config does not match the interrupted run:")
+            for m in mismatched:
+                print(f"    {m}")
+            print("  Use the original arguments, or start a new --run-name.")
+            sys.exit(1)
+
+        model.load_state_dict(ck["state_dict"])
+        optimizer.load_state_dict(ck["optimizer"])
+        scheduler.load_state_dict(ck["scheduler"])
+        scaler.load_state_dict(ck["scaler"])
+        history = ck["history"]
+        best_val = float(ck["best_val"])
+        best_epoch = int(ck["best_epoch"])
+        start_epoch = int(ck["epoch"])
+
+        print(f"\nResumed from {ckpt_path}")
+        print(f"  Completed epochs : {start_epoch} / {args.epochs}")
+        if best_epoch > 0:
+            print(f"  Best validation  : {best_val:.2f}% at epoch {best_epoch}")
+        if start_epoch >= args.epochs:
+            print("  Already complete - nothing to do.")
+            return
 
     # ══════════════════════════════════════════════════════════════════
     # Training loop
     # ══════════════════════════════════════════════════════════════════
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         epoch_start = time.time()
         model.train()
 
@@ -576,6 +687,16 @@ def train_model() -> None:
 
         print(line)
 
+        # ── Resumable checkpoint, written every epoch ──
+        # ~34 MB and well under a second, against a ~14 s epoch, so the
+        # overhead is a couple of percent and an interrupt costs at most one
+        # epoch instead of the whole run.
+        if not args.smoke_test:
+            save_checkpoint(
+                ckpt_path, model, optimizer, scheduler, scaler,
+                epoch + 1, history, best_val, best_epoch, num_classes, args,
+            )
+
         if not args.smoke_test and ((epoch + 1) % 25 == 0 or (epoch + 1) == args.epochs):
             save_curves(history, os.path.join(out_dir, "training_curves.png"), args.epochs)
             with open(os.path.join(out_dir, "history.json"), "w", encoding="utf-8") as f:
@@ -605,6 +726,12 @@ def train_model() -> None:
     save_curves(history, os.path.join(out_dir, "training_curves.png"), args.epochs)
     with open(os.path.join(out_dir, "history.json"), "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
+
+    # The run finished, so the resume checkpoint is dead weight - and leaving
+    # it would make a later re-run of this name fail the "interrupted run
+    # exists" guard.
+    if os.path.exists(ckpt_path):
+        os.remove(ckpt_path)
 
     print("\n" + "=" * 78)
     print(f"  Run '{args.run_name}' complete")
