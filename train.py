@@ -171,7 +171,8 @@ CHECKPOINT_NAME = "last_checkpoint.pth"
 # would silently produce a model that is not what either command line asked
 # for, so a mismatch is refused rather than warned about.
 RESUME_CRITICAL_FIELDS = (
-    "head", "lr", "p", "k", "frames", "accum", "scale", "margin",
+    "head", "neck", "bin_dim", "depth",
+    "lr", "p", "k", "frames", "accum", "scale", "margin",
     "data_dir", "train_upper", "val_upper", "occlusion_aug", "flip_prob",
     "warmup_epochs", "epochs", "no_val",
 )
@@ -189,6 +190,7 @@ def save_checkpoint(
     best_epoch: int,
     num_classes: int,
     args,
+    model_kwargs: Dict,
 ) -> None:
     """Write a resumable checkpoint atomically.
 
@@ -212,7 +214,8 @@ def save_checkpoint(
         "best_epoch": best_epoch,
         "num_classes": num_classes,
         "head": args.head,
-        "embed_dim": 256,
+        "embed_dim": model_kwargs.get("embed_dim", 256),
+        "model_kwargs": model_kwargs,
         "config": vars(args),
     }
 
@@ -293,6 +296,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--accum", type=int, default=1, help="Gradient accumulation steps.")
 
     p.add_argument("--head", type=str, default="cosface", choices=["linear", "cosface"])
+    p.add_argument("--neck", type=str, default="flatten", choices=["flatten", "hpm"],
+                   help="'flatten' is the original head (one Linear holding 97%% of "
+                        "the model's parameters); 'hpm' is the part-based "
+                        "Horizontal Pyramid Mapping replacement.")
+    p.add_argument("--bin-dim", type=int, default=256,
+                   help="Output width per HPM bin. 31 bins, so the descriptor is "
+                        "31 x bin-dim.")
+    p.add_argument("--depth", type=str, default="shallow", choices=["shallow", "deep"],
+                   help="'deep' uses GaitSet's 6-layer conv stack instead of 3.")
     p.add_argument("--scale", type=float, default=16.0, help="CosFace logit scale s.")
     p.add_argument("--margin", type=float, default=0.2, help="CosFace angular margin m.")
     p.add_argument("--margin-warmup", type=int, default=20,
@@ -461,13 +473,20 @@ def train_model() -> None:
             use_val = False
 
     # ── Model, losses, optimizer ───────────────────────────────────────
-    model = GlobalLocalFusedNetwork(
-        num_classes=num_classes,
-        embed_dim=256,
-        head=args.head,
-        cosface_scale=args.scale,
-        cosface_margin=args.margin,
-    ).to(device)
+    # Built once and stored verbatim in every checkpoint, so eval.py can
+    # reconstruct any architecture with GlobalLocalFusedNetwork(**model_kwargs)
+    # instead of needing a new field for each option added.
+    model_kwargs = {
+        "num_classes": num_classes,
+        "embed_dim": 256,
+        "head": args.head,
+        "cosface_scale": args.scale,
+        "cosface_margin": args.margin,
+        "neck": args.neck,
+        "bin_dim": args.bin_dim,
+        "depth": args.depth,
+    }
+    model = GlobalLocalFusedNetwork(**model_kwargs).to(device)
 
     ce_criterion = nn.CrossEntropyLoss()
     triplet_criterion = nn.TripletMarginLoss(margin=args.triplet_margin, p=2)
@@ -676,7 +695,8 @@ def train_model() -> None:
                             "state_dict": model.state_dict(),
                             "num_classes": num_classes,
                             "head": args.head,
-                            "embed_dim": 256,
+                            "embed_dim": model.embed_dim,
+                            "model_kwargs": model_kwargs,
                             "epoch": epoch + 1,
                             "val_rank1": val_mean,
                         },
@@ -695,6 +715,7 @@ def train_model() -> None:
             save_checkpoint(
                 ckpt_path, model, optimizer, scheduler, scaler,
                 epoch + 1, history, best_val, best_epoch, num_classes, args,
+                model_kwargs,
             )
 
         if not args.smoke_test and ((epoch + 1) % 25 == 0 or (epoch + 1) == args.epochs):
@@ -717,7 +738,8 @@ def train_model() -> None:
             "state_dict": model.state_dict(),
             "num_classes": num_classes,
             "head": args.head,
-            "embed_dim": 256,
+            "embed_dim": model.embed_dim,
+            "model_kwargs": model_kwargs,
             "epoch": args.epochs,
         },
         final_path,

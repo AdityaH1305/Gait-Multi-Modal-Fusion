@@ -34,6 +34,61 @@ import torch.nn.functional as F
 # Branch A – Dynamic (set of silhouette frames)
 # ---------------------------------------------------------------------------
 
+def _build_backbone(module: nn.Module, in_channels: int, deep: bool) -> None:
+    """Attach the shared convolutional stack to ``module``.
+
+    The layer names are fixed (``conv1``/``bn1``/``pool1`` ...) because they
+    appear in every checkpoint written so far; renaming them would break
+    loading for runs A-F2.  The ``deep`` variant therefore ADDS a second
+    convolution at each stage under new names rather than restructuring:
+
+        shallow:  1 -> 32       -> pool -> 64       -> pool -> 128
+        deep:     1 -> 32 -> 32 -> pool -> 64 -> 64 -> pool -> 128 -> 128
+
+    The deep form is GaitSet's stack.  Either way the output is 128x16x16,
+    so the neck is unaffected and the two changes compose cleanly.
+    """
+    module.deep = deep
+
+    module.conv1 = nn.Conv2d(in_channels, 32, kernel_size=5, stride=1, padding=2)
+    module.bn1 = nn.BatchNorm2d(32)
+    module.pool1 = nn.MaxPool2d(2)
+
+    module.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+    module.bn2 = nn.BatchNorm2d(64)
+    module.pool2 = nn.MaxPool2d(2)
+
+    module.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+    module.bn3 = nn.BatchNorm2d(128)
+
+    if deep:
+        module.conv1b = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        module.bn1b = nn.BatchNorm2d(32)
+        module.conv2b = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+        module.bn2b = nn.BatchNorm2d(64)
+        module.conv3b = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
+        module.bn3b = nn.BatchNorm2d(128)
+
+
+def _backbone_forward(module: nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """Run the convolutional stack attached by :func:`_build_backbone`."""
+    x = F.relu(module.bn1(module.conv1(x)))
+    if module.deep:
+        x = F.relu(module.bn1b(module.conv1b(x)))
+    x = module.pool1(x)
+
+    x = F.relu(module.bn2(module.conv2(x)))
+    if module.deep:
+        x = F.relu(module.bn2b(module.conv2b(x)))
+    x = module.pool2(x)
+
+    x = F.relu(module.bn3(module.conv3(x)))
+    if module.deep:
+        x = F.relu(module.bn3b(module.conv3b(x)))
+
+    return x
+
+
 class DynamicBranch(nn.Module):
     """Extracts a fixed-size representation from a *variable-length* set of
     silhouette frames.
@@ -43,25 +98,9 @@ class DynamicBranch(nn.Module):
     yielding a single feature map that is invariant to frame ordering and count.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, deep: bool = False) -> None:
         super().__init__()
-
-        # Layer 1: 1 → 32 channels, 5×5 kernel, same-padding
-        # 64×64 → (conv) 64×64 → (pool) 32×32
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
-        self.bn1 = nn.BatchNorm2d(32)     # ← FIX: stabilises activations
-        self.pool1 = nn.MaxPool2d(2)
-
-        # Layer 2: 32 → 64 channels, 3×3 kernel, same-padding
-        # 32×32 → (conv) 32×32 → (pool) 16×16
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)     # ← FIX
-        self.pool2 = nn.MaxPool2d(2)
-
-        # Layer 3: 64 → 128 channels, 3×3 kernel, same-padding
-        # 16×16 → (conv) 16×16  (no further pooling)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)    # ← FIX
+        _build_backbone(self, in_channels=1, deep=deep)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with Set Pooling over the frame dimension.
@@ -79,10 +118,7 @@ class DynamicBranch(nn.Module):
         # Merge Batch and N so Conv2d sees (B*N, 1, H, W).
         x = x.view(B * N, 1, H, W)
 
-        # Conv → BN → ReLU → Pool  (×3 layers)
-        x = self.pool1(F.relu(self.bn1(self.conv1(x))))
-        x = self.pool2(F.relu(self.bn2(self.conv2(x))))
-        x = F.relu(self.bn3(self.conv3(x)))
+        x = _backbone_forward(self, x)
 
         # 2. SEPARATE THE TIMELINE
         # Reshape back to (B, N, C, H', W') to expose the frame axis.
@@ -108,19 +144,9 @@ class StaticBranch(nn.Module):
     reshaping since the input is a single image.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, deep: bool = False) -> None:
         super().__init__()
-
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
-        self.bn1 = nn.BatchNorm2d(32)     # ← FIX
-        self.pool1 = nn.MaxPool2d(2)      # 64×64 → 32×32
-
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)     # ← FIX
-        self.pool2 = nn.MaxPool2d(2)      # 32×32 → 16×16
-
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)    # ← FIX
+        _build_backbone(self, in_channels=1, deep=deep)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Standard CNN forward pass.
@@ -131,9 +157,7 @@ class StaticBranch(nn.Module):
         Returns:
             Feature map of shape ``(B, 128, 16, 16)``.
         """
-        x = self.pool1(F.relu(self.bn1(self.conv1(x))))
-        x = self.pool2(F.relu(self.bn2(self.conv2(x))))
-        x = F.relu(self.bn3(self.conv3(x)))
+        x = _backbone_forward(self, x)
 
         return x  # (B, 128, 16, 16)
 
@@ -194,6 +218,110 @@ class MultimodalFusion(nn.Module):
         fused_feat = (feat_a * weight_a) + (feat_b * weight_b)
 
         return fused_feat  # (B, 128, 16, 16)
+
+
+# ---------------------------------------------------------------------------
+# Necks: fused feature map -> embedding vector
+# ---------------------------------------------------------------------------
+
+class HorizontalPyramidMapping(nn.Module):
+    """Part-based head: horizontal strips, each with its own projection.
+
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │  WHY THIS REPLACES flatten + Linear:                                │
+    │                                                                      │
+    │  The previous head flattened the 128x16x16 fused map to 32,768 and  │
+    │  projected it to one 256-D vector.  That single Linear held         │
+    │  8,388,864 parameters -- 97.4% of the entire model -- while the two │
+    │  convolutional branches doing the actual feature extraction held    │
+    │  1.1% each.  It caused two problems at once:                        │
+    │                                                                      │
+    │  1. Overfitting.  Training accuracy hits 100% on 64 identities      │
+    │     within a few dozen epochs.                                      │
+    │  2. A coat contaminates EVERYTHING.  With one global vector, every  │
+    │     body region contributes to every output number, so occluding    │
+    │     the torso degrades the whole descriptor rather than part of it. │
+    │                                                                      │
+    │  HPM splits the map into horizontal strips at several scales and    │
+    │  gives each strip its own small projection.  Matching then compares │
+    │  part to part: the strips covering the legs never saw the coat and  │
+    │  stay reliable.                                                     │
+    └──────────────────────────────────────────────────────────────────────┘
+
+    Output normalisation (important):
+        Each bin is L2-normalised and scaled by ``1/sqrt(n_bins)`` before the
+        bins are concatenated.  The concatenated vector then has unit norm,
+        and ordinary cosine similarity between two such vectors is EXACTLY
+        the mean of the per-bin cosine similarities:
+
+            cos(a, b) = (1/n) * sum_i cos(a_i, b_i)
+
+        So the whole evaluation pipeline -- which computes a plain dot
+        product on unit vectors -- performs part-to-part matching without
+        any changes.
+
+    Args:
+        in_channels: Channels of the fused feature map (128).
+        bin_dim:     Output width per bin.
+        scales:      Number of horizontal strips at each pyramid level.
+                     ``(1, 2, 4, 8, 16)`` gives 31 bins and divides a
+                     16-row feature map evenly at every level.
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 128,
+        bin_dim: int = 256,
+        scales: tuple = (1, 2, 4, 8, 16),
+    ) -> None:
+        super().__init__()
+
+        self.scales = tuple(scales)
+        self.n_bins = int(sum(self.scales))
+        self.bin_dim = bin_dim
+        self.out_dim = self.n_bins * bin_dim
+
+        # One projection matrix PER BIN, held as a single parameter so the
+        # whole pyramid can be applied with one batched matmul.  Separate
+        # matrices are the point: a shared one would collapse this back into
+        # a global descriptor.
+        self.bin_fc = nn.Parameter(torch.empty(self.n_bins, in_channels, bin_dim))
+        nn.init.xavier_uniform_(self.bin_fc)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Map a fused feature map to a flattened, unit-norm part descriptor.
+
+        Args:
+            x: ``(B, C, H, W)`` fused feature map.
+
+        Returns:
+            ``(B, n_bins * bin_dim)``, unit norm.
+        """
+        B, C, H, W = x.size()
+
+        # ── 1. Pool each horizontal strip at every scale ──
+        pooled = []
+        for s in self.scales:
+            # Split the height into s contiguous strips.
+            strips = x.view(B, C, s, H // s, W)
+            # Max and mean over each strip's rows and full width.  GaitSet
+            # adds the two rather than concatenating, keeping C channels.
+            z = strips.max(dim=-1)[0].max(dim=-1)[0] + strips.mean(dim=-1).mean(dim=-1)
+            pooled.append(z)                       # (B, C, s)
+
+        z = torch.cat(pooled, dim=2)               # (B, C, n_bins)
+
+        # ── 2. Per-bin projection ──
+        z = z.permute(2, 0, 1)                     # (n_bins, B, C)
+        z = torch.matmul(z, self.bin_fc)           # (n_bins, B, bin_dim)
+        z = z.permute(1, 0, 2)                     # (B, n_bins, bin_dim)
+
+        # ── 3. Per-bin normalisation, then flatten ──
+        # Scaling by 1/sqrt(n_bins) makes the concatenated vector unit norm,
+        # so a global dot product equals the mean per-bin cosine.
+        z = F.normalize(z, p=2, dim=2) / (self.n_bins ** 0.5)
+
+        return z.reshape(B, self.out_dim)
 
 
 # ---------------------------------------------------------------------------
@@ -345,15 +473,22 @@ class GlobalLocalFusedNetwork(nn.Module):
         head: str = "linear",
         cosface_scale: float = 16.0,
         cosface_margin: float = 0.2,
+        neck: str = "flatten",
+        bin_dim: int = 256,
+        depth: str = "shallow",
     ) -> None:
         super().__init__()
 
-        self.embed_dim = embed_dim
         self.head_type = head
+        self.neck_type = neck
+
+        if depth not in ("shallow", "deep"):
+            raise ValueError(f"Unknown depth: {depth!r} (expected 'shallow' or 'deep')")
+        deep = depth == "deep"
 
         # ── Dual branches + attention fusion ──
-        self.branch_a = DynamicBranch()
-        self.branch_b = StaticBranch()
+        self.branch_a = DynamicBranch(deep=deep)
+        self.branch_b = StaticBranch(deep=deep)
         self.fusion = MultimodalFusion()
 
         flat_dim = self._FEAT_CHANNELS * self._FEAT_HEIGHT * self._FEAT_WIDTH
@@ -362,14 +497,27 @@ class GlobalLocalFusedNetwork(nn.Module):
         # ── Regularisation ──
         self.dropout = nn.Dropout(p=0.15)
 
-        # ── EMBEDDING HEAD ──
-        # Projects the high-dimensional fusion output into a compact metric
-        # space.  BatchNorm stabilises the embedding magnitude during early
-        # training (prevents collapse), and L2 normalisation maps all
-        # embeddings onto the unit hypersphere for cosine-compatible
-        # distance computation.
-        self.embed_fc = nn.Linear(flat_dim, embed_dim)
-        self.embed_bn = nn.BatchNorm1d(embed_dim)
+        # ── NECK: fused feature map -> embedding ──
+        #
+        # "flatten" is the original head: flatten the 128x16x16 map and
+        # project it to one global vector.  Kept as the default so earlier
+        # checkpoints remain loadable, but note that this single Linear is
+        # 8.4M parameters -- 97.4% of the model.
+        #
+        # "hpm" is the part-based replacement: horizontal strips with their
+        # own projections, ~1.0M parameters total, and matching becomes
+        # part-to-part.
+        if neck == "hpm":
+            self.hpm = HorizontalPyramidMapping(
+                in_channels=self._FEAT_CHANNELS, bin_dim=bin_dim
+            )
+            self.embed_dim = self.hpm.out_dim
+        elif neck == "flatten":
+            self.embed_fc = nn.Linear(flat_dim, embed_dim)
+            self.embed_bn = nn.BatchNorm1d(embed_dim)
+            self.embed_dim = embed_dim
+        else:
+            raise ValueError(f"Unknown neck: {neck!r} (expected 'flatten' or 'hpm')")
 
         # ── CLASSIFICATION HEAD ──
         # Operates on the L2-normalised embeddings.
@@ -383,10 +531,10 @@ class GlobalLocalFusedNetwork(nn.Module):
         # and angular margin, removing that cap.
         if head == "cosface":
             self.classifier = CosFaceHead(
-                embed_dim, num_classes, s=cosface_scale, m=cosface_margin
+                self.embed_dim, num_classes, s=cosface_scale, m=cosface_margin
             )
         elif head == "linear":
-            self.classifier = nn.Linear(embed_dim, num_classes)
+            self.classifier = nn.Linear(self.embed_dim, num_classes)
         else:
             raise ValueError(f"Unknown head type: {head!r} (expected 'linear' or 'cosface')")
 
@@ -419,14 +567,18 @@ class GlobalLocalFusedNetwork(nn.Module):
         # ── Attention-weighted fusion ──
         fused_feat = self.fusion(feat_a, feat_b)  # (B, 128, 16, 16)
 
-        # ── Flatten spatial dims ──
-        fused_flat = fused_feat.view(fused_feat.size(0), -1)  # (B, 32768)
-        fused_flat = self.dropout(fused_flat)
-
-        # ── Embedding head: project → normalise → unit hypersphere ──
-        embeddings = self.embed_fc(fused_flat)           # (B, 256)
-        embeddings = self.embed_bn(embeddings)           # (B, 256)
-        embeddings = F.normalize(embeddings, p=2, dim=1) # (B, 256), ||e|| = 1
+        # ── Neck: feature map → unit-norm embedding ──
+        if self.neck_type == "hpm":
+            # HPM normalises each bin internally, so the flattened output is
+            # already unit norm and a global dot product equals the mean
+            # per-bin cosine.
+            embeddings = self.hpm(self.dropout(fused_feat))   # (B, n_bins*bin_dim)
+        else:
+            fused_flat = fused_feat.view(fused_feat.size(0), -1)  # (B, 32768)
+            fused_flat = self.dropout(fused_flat)
+            embeddings = self.embed_fc(fused_flat)           # (B, 256)
+            embeddings = self.embed_bn(embeddings)           # (B, 256)
+            embeddings = F.normalize(embeddings, p=2, dim=1) # (B, 256), ||e|| = 1
 
         # ── Classification head: embeddings → logits ──
         if self.head_type == "cosface":
@@ -448,12 +600,21 @@ if __name__ == "__main__":
     dummy_gei = torch.randn(4, 1, 64, 64)       # 1 GEI image per sample
     dummy_labels = torch.tensor([0, 1, 2, 3])
 
-    for head in ("linear", "cosface"):
+    configs = [
+        ("linear", "flatten", "shallow"),
+        ("cosface", "flatten", "shallow"),
+        ("cosface", "hpm", "shallow"),
+        ("cosface", "hpm", "deep"),
+    ]
+
+    for head, neck, depth in configs:
         print("=" * 62)
-        print(f"  Split-Head Model - Smoke Test  (head={head})")
+        print(f"  Smoke Test  (head={head}, neck={neck}, depth={depth})")
         print("=" * 62)
 
-        model = GlobalLocalFusedNetwork(num_classes=74, embed_dim=256, head=head)
+        model = GlobalLocalFusedNetwork(
+            num_classes=74, embed_dim=256, head=head, neck=neck, depth=depth
+        )
         model.eval()
 
         # Inference path: no labels, exactly how eval.py calls the model
@@ -488,6 +649,29 @@ if __name__ == "__main__":
         print(f"     Best-case cross-entropy with this head: {floor:.4f}"
               f"   (random = {math.log(74):.2f})")
 
+        # ── HPM: verify global cosine == mean per-bin cosine ──
+        # This is the property that lets eval.py do part-to-part matching
+        # with an unchanged dot product. If it breaks, every reported
+        # accuracy silently becomes a plain global comparison again.
+        if neck == "hpm":
+            nb, bd = model.hpm.n_bins, model.hpm.bin_dim
+            print(f"     HPM: {nb} bins x {bd} = {model.embed_dim}-D descriptor")
+            with torch.no_grad():
+                e2, _ = model(torch.randn(4, 45, 64, 64), torch.randn(4, 1, 64, 64))[::-1]
+            a = embeddings.view(4, nb, bd)
+            b = e2.view(4, nb, bd)
+            global_cos = (embeddings * e2).sum(dim=1)
+            perbin_cos = F.cosine_similarity(a, b, dim=2).mean(dim=1)
+            gap = (global_cos - perbin_cos).abs().max().item()
+            assert gap < 1e-5, f"global cosine != mean per-bin cosine (gap {gap:.2e})"
+            print(f"[OK] Global cosine == mean per-bin cosine (max gap {gap:.1e})")
+            print("     -> matching is genuinely part-to-part")
+
         total_params = sum(p.numel() for p in model.parameters())
+        neck_params = sum(
+            p.numel() for n, m_ in model.named_children()
+            if n in ("hpm", "embed_fc", "embed_bn") for p in m_.parameters()
+        )
         print(f"Total parameters:     {total_params:,}")
+        print(f"  of which the neck:  {neck_params:,}  ({neck_params / total_params * 100:.1f}%)")
         print()

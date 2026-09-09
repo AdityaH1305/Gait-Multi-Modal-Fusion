@@ -721,23 +721,38 @@ def main() -> None:
 
     if isinstance(ckpt, dict) and "state_dict" in ckpt:
         state_dict = ckpt["state_dict"]
-        num_classes = int(ckpt.get("num_classes", args.num_classes))
-        head = str(ckpt.get("head", "linear"))
-        embed_dim = int(ckpt.get("embed_dim", 256))
-        print(f"  Checkpoint config: head={head}, num_classes={num_classes}, "
-              f"embed_dim={embed_dim}")
+
+        if "model_kwargs" in ckpt:
+            # Preferred path: the checkpoint carries its own constructor
+            # arguments, so any architecture reconstructs without this file
+            # needing to know about it.
+            model_kwargs = dict(ckpt["model_kwargs"])
+        else:
+            # Runs A-F2 predate model_kwargs; rebuild from the individual
+            # fields, which implies the original flatten/shallow architecture.
+            model_kwargs = {
+                "num_classes": int(ckpt.get("num_classes", args.num_classes)),
+                "embed_dim": int(ckpt.get("embed_dim", 256)),
+                "head": str(ckpt.get("head", "linear")),
+            }
+
+        desc = ", ".join(
+            f"{k}={v}" for k, v in model_kwargs.items()
+            if k in ("head", "neck", "depth", "num_classes", "bin_dim")
+        )
+        print(f"  Checkpoint config: {desc}")
         if "epoch" in ckpt:
             print(f"  Saved at epoch {int(ckpt['epoch'])}"
                   + (f" (val Rank-1 {float(ckpt['val_rank1']):.2f}%)"
                      if "val_rank1" in ckpt else ""))
     else:
         state_dict = ckpt
-        num_classes, head, embed_dim = args.num_classes, "linear", 256
-        print(f"  Raw state_dict: assuming head=linear, num_classes={num_classes}")
+        model_kwargs = {"num_classes": args.num_classes, "embed_dim": 256,
+                        "head": "linear"}
+        print(f"  Raw state_dict: assuming head=linear, "
+              f"num_classes={args.num_classes}")
 
-    model = GlobalLocalFusedNetwork(
-        num_classes=num_classes, embed_dim=embed_dim, head=head
-    ).to(device)
+    model = GlobalLocalFusedNetwork(**model_kwargs).to(device)
     model.load_state_dict(state_dict)
     model.eval()
 

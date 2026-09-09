@@ -45,3 +45,4 @@ Processed_CASIAB/
 # Derived evaluation artifacts (regenerate with eval.py)
 # --------------------------------------------------
 results/embeddings.npz
+results/*/embeddings.npz
