@@ -46,3 +46,7 @@ Processed_CASIAB/
 # --------------------------------------------------
 results/embeddings.npz
 results/*/embeddings.npz
+
+# Resumable training state (deleted automatically when a run completes)
+results/*/last_checkpoint.pth
+results/*/last_checkpoint.pth.tmp

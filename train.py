@@ -39,6 +39,7 @@ Usage:
 import argparse
 import json
 import os
+import random
 import sys
 import time
 from typing import Dict, List, Tuple
@@ -171,7 +172,7 @@ CHECKPOINT_NAME = "last_checkpoint.pth"
 # would silently produce a model that is not what either command line asked
 # for, so a mismatch is refused rather than warned about.
 RESUME_CRITICAL_FIELDS = (
-    "head", "neck", "bin_dim", "depth",
+    "head", "neck", "bin_dim", "depth", "mgp",
     "lr", "p", "k", "frames", "accum", "scale", "margin",
     "data_dir", "train_upper", "val_upper", "occlusion_aug", "flip_prob",
     "warmup_epochs", "epochs", "no_val",
@@ -305,6 +306,10 @@ def parse_args() -> argparse.Namespace:
                         "31 x bin-dim.")
     p.add_argument("--depth", type=str, default="shallow", choices=["shallow", "deep"],
                    help="'deep' uses GaitSet's 6-layer conv stack instead of 3.")
+    p.add_argument("--mgp", action="store_true",
+                   help="Add GaitSet's Multilayer Global Pipeline to the frame "
+                        "branch: set-level features from intermediate layers, "
+                        "with their own 31 HPM bins. Requires --neck hpm.")
     p.add_argument("--scale", type=float, default=16.0, help="CosFace logit scale s.")
     p.add_argument("--margin", type=float, default=0.2, help="CosFace angular margin m.")
     p.add_argument("--margin-warmup", type=int, default=20,
@@ -330,6 +335,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--frame-budget", type=int, default=eval_mod.DEFAULT_FRAME_BUDGET,
                    help="Frame budget for validation embedding extraction.")
 
+    p.add_argument("--seed", type=int, default=None,
+                   help="Random seed for initialisation, sampling and "
+                        "augmentation. If omitted, one is drawn and recorded in "
+                        "history.json. GPU results are still not bit-exact "
+                        "(cudnn.benchmark is on).")
     p.add_argument("--resume", action="store_true",
                    help="Continue an interrupted run from results/<run-name>/"
                         "last_checkpoint.pth. All other arguments must match "
@@ -351,6 +361,13 @@ def parse_args() -> argparse.Namespace:
 
 def train_model() -> None:
     args = parse_args()
+
+    # Checked before anything slow runs: the model would refuse this anyway,
+    # but only after several minutes of loading data.
+    if args.mgp and args.neck != "hpm":
+        print("[ERROR] --mgp requires --neck hpm: MGP's output needs its own "
+              "part-based bins.")
+        sys.exit(1)
 
     print("=" * 78)
     print("  Global-Local Multimodal Fusion - Training")
@@ -377,6 +394,17 @@ def train_model() -> None:
         args.margin_warmup = 1
         args.warmup_epochs = 1
 
+    # ── Seed ───────────────────────────────────────────────────────────
+    # Fixes initialisation, sampling and augmentation, so a run can be
+    # repeated and two runs can be told apart.  GPU results are still not
+    # bit-exact, because cudnn.benchmark picks kernels at run time.  An
+    # unseeded run draws a seed and records it (args is saved in history).
+    if args.seed is None:
+        args.seed = random.SystemRandom().randrange(2 ** 31)
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)        # seeds the CPU and every CUDA device
+
     train_range = range(1, args.train_upper + 1)
     val_range = range(args.train_upper + 1, args.val_upper + 1)
     use_val = not args.no_val and len(val_range) > 0
@@ -390,6 +418,10 @@ def train_model() -> None:
 
     print(f"\nConfiguration")
     print(f"  Run name          : {args.run_name}")
+    print(f"  Seed              : {args.seed}")
+    print(f"  Model             : neck={args.neck}, depth={args.depth}, "
+          f"MGP={'on' if args.mgp else 'off'}"
+          + (f", bin_dim={args.bin_dim}" if args.neck == "hpm" else ""))
     print(f"  Head              : {args.head}"
           + (f" (s={args.scale}, m={args.margin})" if args.head == "cosface" else ""))
     print(f"  PK sampling       : P={args.p}, K={args.k} -> batch={micro_batch}")
@@ -485,6 +517,7 @@ def train_model() -> None:
         "neck": args.neck,
         "bin_dim": args.bin_dim,
         "depth": args.depth,
+        "mgp": args.mgp,
     }
     model = GlobalLocalFusedNetwork(**model_kwargs).to(device)
 

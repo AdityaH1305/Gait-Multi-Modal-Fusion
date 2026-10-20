@@ -70,17 +70,33 @@ def _build_backbone(module: nn.Module, in_channels: int, deep: bool) -> None:
         module.bn3b = nn.BatchNorm2d(128)
 
 
-def _backbone_forward(module: nn.Module, x: torch.Tensor) -> torch.Tensor:
-    """Run the convolutional stack attached by :func:`_build_backbone`."""
+def _backbone_forward(
+    module: nn.Module,
+    x: torch.Tensor,
+    taps: list = None,
+) -> torch.Tensor:
+    """Run the convolutional stack attached by :func:`_build_backbone`.
+
+    Args:
+        module: The branch the stack was attached to.
+        x:      Input images, ``(batch, 1, 64, 64)``.
+        taps:   Optional list.  When given, the feature maps after the first
+                and second pooled stages are appended to it, for the
+                Multilayer Global Pipeline.  The return value is unchanged.
+    """
     x = F.relu(module.bn1(module.conv1(x)))
     if module.deep:
         x = F.relu(module.bn1b(module.conv1b(x)))
     x = module.pool1(x)
+    if taps is not None:
+        taps.append(x)                      # (batch, 32, 32, 32)
 
     x = F.relu(module.bn2(module.conv2(x)))
     if module.deep:
         x = F.relu(module.bn2b(module.conv2b(x)))
     x = module.pool2(x)
+    if taps is not None:
+        taps.append(x)                      # (batch, 64, 16, 16)
 
     x = F.relu(module.bn3(module.conv3(x)))
     if module.deep:
@@ -102,15 +118,20 @@ class DynamicBranch(nn.Module):
         super().__init__()
         _build_backbone(self, in_channels=1, deep=deep)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_snapshots: bool = False):
         """Forward pass with Set Pooling over the frame dimension.
 
         Args:
             x: Silhouette frames of shape ``(B, N, 64, 64)`` where *N* is the
                number of frames (variable across samples, padded to batch max).
+            return_snapshots: Also set-pool the feature maps after the first
+               and second pooled stages, for the Multilayer Global Pipeline.
 
         Returns:
-            Pooled feature map of shape ``(B, 128, 16, 16)``.
+            Pooled feature map of shape ``(B, 128, 16, 16)``.  With
+            ``return_snapshots=True``, a tuple ``(sp1, sp2, sp3)`` of shapes
+            ``(B, 32, 32, 32)``, ``(B, 64, 16, 16)`` and ``(B, 128, 16, 16)``,
+            where ``sp3`` is exactly the default return value.
         """
         B, N, H, W = x.size()
 
@@ -118,18 +139,27 @@ class DynamicBranch(nn.Module):
         # Merge Batch and N so Conv2d sees (B*N, 1, H, W).
         x = x.view(B * N, 1, H, W)
 
-        x = _backbone_forward(self, x)
+        taps = [] if return_snapshots else None
+        x = _backbone_forward(self, x, taps)
 
-        # 2. SEPARATE THE TIMELINE
-        # Reshape back to (B, N, C, H', W') to expose the frame axis.
-        _, C, new_H, new_W = x.size()
-        x = x.view(B, N, C, new_H, new_W)
+        # 2 + 3. SEPARATE THE TIMELINE, THEN SET POOLING
+        # Reshape back to (B, N, C, H', W') to expose the frame axis, then
+        # take the element-wise max across frames.  A max is unchanged by
+        # repeated frames, so tile-padded batches stay exact at every depth.
+        x = self._set_pool(x, B, N)               # (B, 128, 16, 16)
 
-        # 3. SET POOLING (element-wise max across the frame dimension)
-        # torch.max returns (values, indices); keep values only.
-        x, _ = torch.max(x, dim=1)
+        if return_snapshots:
+            sp1, sp2 = (self._set_pool(t, B, N) for t in taps)
+            return sp1, sp2, x
 
         return x  # (B, 128, 16, 16)
+
+    @staticmethod
+    def _set_pool(x: torch.Tensor, B: int, N: int) -> torch.Tensor:
+        """Element-wise max over the frame axis of a ``(B*N, C, H, W)`` map."""
+        _, C, new_H, new_W = x.size()
+        x, _ = torch.max(x.view(B, N, C, new_H, new_W), dim=1)
+        return x
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +190,86 @@ class StaticBranch(nn.Module):
         x = _backbone_forward(self, x)
 
         return x  # (B, 128, 16, 16)
+
+
+# ---------------------------------------------------------------------------
+# Multilayer Global Pipeline (set-level stream for Branch A)
+# ---------------------------------------------------------------------------
+
+class MultilayerGlobalPipeline(nn.Module):
+    """GaitSet's Multilayer Global Pipeline (MGP), adapted to this backbone.
+
+    Branch A applies Set Pooling once, after its last convolution, so the set
+    is only summarised at the most abstract level.  Shallow layers keep fine
+    detail that deeper layers have already abstracted away.  MGP collects
+    set-level information from several depths:
+
+        sp1 (32 ch) -> stage 2 -> pool -> (+ sp2) -> stage 3 -> (+ sp3) -> gl
+
+    where ``sp1``, ``sp2`` and ``sp3`` are Branch A's feature maps after its
+    first pooled stage, second pooled stage and final stage, each set-pooled
+    by a max over frames.
+
+    Structure follows the GaitSet paper (Sec. 3.4) and official code:
+
+    - The blocks MIRROR the main pipeline's stages 2 and 3, with SEPARATE
+      weights.  With ``deep=True`` this is GaitSet's ``gl_layer1..4``
+      exactly; with ``deep=False`` it mirrors the shallow backbone, so MGP
+      adds no more depth than the backbone itself has.
+    - Snapshots are added where GaitSet adds them: ``sp2`` before stage 3
+      (``gl_layer3(gl + frame_max(x))``) and ``sp3`` after it
+      (``gl = gl + x``).
+    - Conv -> BatchNorm -> ReLU, matching this project's backbone.
+
+    The output gets its own HPM bins in the network, separate from the main
+    stream's, as in GaitSet.
+
+    Args:
+        deep: Mirror the deep (two convolutions per stage) backbone.
+    """
+
+    def __init__(self, deep: bool = False) -> None:
+        super().__init__()
+        self.deep = deep
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.pool = nn.MaxPool2d(2)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+
+        if deep:
+            self.conv2b = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+            self.bn2b = nn.BatchNorm2d(64)
+            self.conv3b = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)
+            self.bn3b = nn.BatchNorm2d(128)
+
+    def forward(
+        self,
+        sp1: torch.Tensor,
+        sp2: torch.Tensor,
+        sp3: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build the set-level feature map from Branch A's three snapshots.
+
+        Args:
+            sp1: ``(B, 32, 32, 32)``, set-pooled after the first stage.
+            sp2: ``(B, 64, 16, 16)``, set-pooled after the second stage.
+            sp3: ``(B, 128, 16, 16)``, Branch A's final set-pooled map.
+
+        Returns:
+            ``(B, 128, 16, 16)``.
+        """
+        gl = F.relu(self.bn2(self.conv2(sp1)))
+        if self.deep:
+            gl = F.relu(self.bn2b(self.conv2b(gl)))
+        gl = self.pool(gl) + sp2
+
+        gl = F.relu(self.bn3(self.conv3(gl)))
+        if self.deep:
+            gl = F.relu(self.bn3b(self.conv3b(gl)))
+
+        return gl + sp3
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +376,10 @@ class HorizontalPyramidMapping(nn.Module):
         scales:      Number of horizontal strips at each pyramid level.
                      ``(1, 2, 4, 8, 16)`` gives 31 bins and divides a
                      16-row feature map evenly at every level.
+        n_maps:      Number of feature maps binned.  Each map gets its own
+                     31 bins with their own projections, as GaitSet does for
+                     its main pipeline and its Multilayer Global Pipeline.
+                     ``n_maps=1`` is the original single-map head, unchanged.
     """
 
     def __init__(
@@ -273,11 +387,13 @@ class HorizontalPyramidMapping(nn.Module):
         in_channels: int = 128,
         bin_dim: int = 256,
         scales: tuple = (1, 2, 4, 8, 16),
+        n_maps: int = 1,
     ) -> None:
         super().__init__()
 
         self.scales = tuple(scales)
-        self.n_bins = int(sum(self.scales))
+        self.n_maps = n_maps
+        self.n_bins = int(sum(self.scales)) * n_maps
         self.bin_dim = bin_dim
         self.out_dim = self.n_bins * bin_dim
 
@@ -288,26 +404,30 @@ class HorizontalPyramidMapping(nn.Module):
         self.bin_fc = nn.Parameter(torch.empty(self.n_bins, in_channels, bin_dim))
         nn.init.xavier_uniform_(self.bin_fc)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Map a fused feature map to a flattened, unit-norm part descriptor.
+    def forward(self, *maps: torch.Tensor) -> torch.Tensor:
+        """Map feature maps to a flattened, unit-norm part descriptor.
 
         Args:
-            x: ``(B, C, H, W)`` fused feature map.
+            *maps: ``n_maps`` feature maps, each ``(B, C, H, W)``.  Their bins
+                are concatenated in the order given.
 
         Returns:
             ``(B, n_bins * bin_dim)``, unit norm.
         """
-        B, C, H, W = x.size()
+        if len(maps) != self.n_maps:
+            raise ValueError(f"HPM built for {self.n_maps} map(s), got {len(maps)}")
 
-        # ── 1. Pool each horizontal strip at every scale ──
+        # ── 1. Pool each horizontal strip at every scale, map by map ──
         pooled = []
-        for s in self.scales:
-            # Split the height into s contiguous strips.
-            strips = x.view(B, C, s, H // s, W)
-            # Max and mean over each strip's rows and full width.  GaitSet
-            # adds the two rather than concatenating, keeping C channels.
-            z = strips.max(dim=-1)[0].max(dim=-1)[0] + strips.mean(dim=-1).mean(dim=-1)
-            pooled.append(z)                       # (B, C, s)
+        for x in maps:
+            B, C, H, W = x.size()
+            for s in self.scales:
+                # Split the height into s contiguous strips.
+                strips = x.view(B, C, s, H // s, W)
+                # Max and mean over each strip's rows and full width.  GaitSet
+                # adds the two rather than concatenating, keeping C channels.
+                z = strips.max(dim=-1)[0].max(dim=-1)[0] + strips.mean(dim=-1).mean(dim=-1)
+                pooled.append(z)                   # (B, C, s)
 
         z = torch.cat(pooled, dim=2)               # (B, C, n_bins)
 
@@ -476,20 +596,34 @@ class GlobalLocalFusedNetwork(nn.Module):
         neck: str = "flatten",
         bin_dim: int = 256,
         depth: str = "shallow",
+        mgp: bool = False,
     ) -> None:
         super().__init__()
 
         self.head_type = head
         self.neck_type = neck
+        self.use_mgp = mgp
 
         if depth not in ("shallow", "deep"):
             raise ValueError(f"Unknown depth: {depth!r} (expected 'shallow' or 'deep')")
         deep = depth == "deep"
 
+        if mgp and neck != "hpm":
+            # MGP's output needs its own part-based bins.  With the flatten
+            # head a second map would need a 65,536 -> 256 layer (16.8M
+            # parameters), the opposite of what the HPM change achieved.
+            raise ValueError("mgp=True requires neck='hpm'")
+
         # ── Dual branches + attention fusion ──
         self.branch_a = DynamicBranch(deep=deep)
         self.branch_b = StaticBranch(deep=deep)
         self.fusion = MultimodalFusion()
+
+        # ── Multilayer Global Pipeline (optional, Branch A only) ──
+        # The GEI branch has no frame axis, so there is nothing to set-pool
+        # at intermediate layers there.
+        if mgp:
+            self.mgp = MultilayerGlobalPipeline(deep=deep)
 
         flat_dim = self._FEAT_CHANNELS * self._FEAT_HEIGHT * self._FEAT_WIDTH
         # 128 × 16 × 16 = 32,768
@@ -508,8 +642,11 @@ class GlobalLocalFusedNetwork(nn.Module):
         # own projections, ~1.0M parameters total, and matching becomes
         # part-to-part.
         if neck == "hpm":
+            # With MGP, the fused map and the MGP map each get their own 31
+            # bins (62 in total), as GaitSet does for its two streams.
             self.hpm = HorizontalPyramidMapping(
-                in_channels=self._FEAT_CHANNELS, bin_dim=bin_dim
+                in_channels=self._FEAT_CHANNELS, bin_dim=bin_dim,
+                n_maps=2 if mgp else 1,
             )
             self.embed_dim = self.hpm.out_dim
         elif neck == "flatten":
@@ -561,8 +698,14 @@ class GlobalLocalFusedNetwork(nn.Module):
                   ``(B, embed_dim)``.
         """
         # ── Branch feature extraction ──
-        feat_a = self.branch_a(frames)     # (B, 128, 16, 16)
-        feat_b = self.branch_b(gei)        # (B, 128, 16, 16)
+        if self.use_mgp:
+            # Branch A also returns its set-pooled intermediate maps; feat_a
+            # is identical to what the default path returns.
+            sp1, sp2, feat_a = self.branch_a(frames, return_snapshots=True)
+            gl_feat = self.mgp(sp1, sp2, feat_a)   # (B, 128, 16, 16)
+        else:
+            feat_a = self.branch_a(frames)         # (B, 128, 16, 16)
+        feat_b = self.branch_b(gei)                # (B, 128, 16, 16)
 
         # ── Attention-weighted fusion ──
         fused_feat = self.fusion(feat_a, feat_b)  # (B, 128, 16, 16)
@@ -572,7 +715,12 @@ class GlobalLocalFusedNetwork(nn.Module):
             # HPM normalises each bin internally, so the flattened output is
             # already unit norm and a global dot product equals the mean
             # per-bin cosine.
-            embeddings = self.hpm(self.dropout(fused_feat))   # (B, n_bins*bin_dim)
+            if self.use_mgp:
+                embeddings = self.hpm(
+                    self.dropout(fused_feat), self.dropout(gl_feat)
+                )                                  # (B, 62*bin_dim)
+            else:
+                embeddings = self.hpm(self.dropout(fused_feat))   # (B, n_bins*bin_dim)
         else:
             fused_flat = fused_feat.view(fused_feat.size(0), -1)  # (B, 32768)
             fused_flat = self.dropout(fused_flat)
@@ -601,19 +749,22 @@ if __name__ == "__main__":
     dummy_labels = torch.tensor([0, 1, 2, 3])
 
     configs = [
-        ("linear", "flatten", "shallow"),
-        ("cosface", "flatten", "shallow"),
-        ("cosface", "hpm", "shallow"),
-        ("cosface", "hpm", "deep"),
+        ("linear", "flatten", "shallow", False),
+        ("cosface", "flatten", "shallow", False),
+        ("cosface", "hpm", "shallow", False),
+        ("cosface", "hpm", "deep", False),
+        ("cosface", "hpm", "shallow", True),
+        ("cosface", "hpm", "deep", True),
     ]
 
-    for head, neck, depth in configs:
+    for head, neck, depth, mgp in configs:
         print("=" * 62)
-        print(f"  Smoke Test  (head={head}, neck={neck}, depth={depth})")
+        print(f"  Smoke Test  (head={head}, neck={neck}, depth={depth}, mgp={mgp})")
         print("=" * 62)
 
         model = GlobalLocalFusedNetwork(
-            num_classes=74, embed_dim=256, head=head, neck=neck, depth=depth
+            num_classes=74, embed_dim=256, head=head, neck=neck, depth=depth,
+            mgp=mgp,
         )
         model.eval()
 
@@ -667,6 +818,24 @@ if __name__ == "__main__":
             print(f"[OK] Global cosine == mean per-bin cosine (max gap {gap:.1e})")
             print("     -> matching is genuinely part-to-part")
 
+        # ── MGP: the main path must be untouched, and padding must stay exact ──
+        if mgp:
+            with torch.no_grad():
+                sp3 = model.branch_a(dummy_frames, return_snapshots=True)[2]
+                main_gap = (sp3 - model.branch_a(dummy_frames)).abs().max().item()
+                assert main_gap == 0.0, f"snapshot path changed Branch A's output ({main_gap:.2e})"
+                print("[OK] Branch A output identical with and without snapshots")
+
+                # eval.py pads short sequences by repeating their own frames.
+                # Every MGP snapshot is a max over frames, so it must not move.
+                one = dummy_frames[:1, :37]
+                ref = model(one, dummy_gei[:1])[1]
+                for target in (74, 165):
+                    padded = one[:, torch.arange(target) % 37]
+                    pad_gap = (ref - model(padded, dummy_gei[:1])[1]).abs().max().item()
+                    assert pad_gap < 1e-6, f"tile-padding changed the embedding ({pad_gap:.2e})"
+                print("[OK] Tile-padding 37 -> 74 and 165 frames leaves the embedding unchanged")
+
         total_params = sum(p.numel() for p in model.parameters())
         neck_params = sum(
             p.numel() for n, m_ in model.named_children()
@@ -674,4 +843,7 @@ if __name__ == "__main__":
         )
         print(f"Total parameters:     {total_params:,}")
         print(f"  of which the neck:  {neck_params:,}  ({neck_params / total_params * 100:.1f}%)")
+        if mgp:
+            mgp_params = sum(p.numel() for p in model.mgp.parameters())
+            print(f"  of which MGP convs: {mgp_params:,}")
         print()
